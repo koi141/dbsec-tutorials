@@ -6,7 +6,7 @@
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = 'demo-dbsec'
+project = 'dbsec-tutorials'
 copyright = '%Y, koi141'
 author = 'koi141'
 release = '1.8.1'
@@ -41,10 +41,10 @@ html_css_files = ['custom.css']
 html_theme_options = {
     "collapse_navbar": True,
     "use_download_button": True,
-    "repository_url": "https://github.com/koi141/demo-dbsec",
+    "repository_url": "https://github.com/koi141/dbsec-tutorials.git",
     "use_repository_button": True,
 }
 
-ogp_site_url = "https://koi141.github.io/demo-dbsec/"
+ogp_site_url = "https://koi141.github.io/dbsec-tutorials/"
 ogp_site_name = "Oracle DB Security Tutorial"
 ogp_type = "website"

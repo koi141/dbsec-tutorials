@@ -3,8 +3,10 @@
 Oracle Databaseのセキュリティ機能を試してみたい方向けに、設定や検証の手順をまとめています。  
 以下のリンクからサイトにアクセスできます。
 ```
-https://koi141.github.io/demo-dbsec/
+https://koi141.github.io/dbsec-tutorials/
 ```
+
+旧リンク：koi141.github.io/demo-dbsec/
 
 ## 対象セキュリティ機能
 このチュートリアルでは、以下のセキュリティ機能を取り上げています。

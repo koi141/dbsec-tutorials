@@ -3,7 +3,7 @@
    :keywords: Oracle Database, security, TDE, VPD, SQL Firewall, Database Vault, Data Redaction, チュートリアル
    :og:title: Oracle DB Security Tutorial
    :og:description: Oracle Databaseの主要なセキュリティ機能を、実際に手を動かしながら学べるチュートリアルサイトです。
-   :og:url: https://koi141.github.io/demo-dbsec/
+   :og:url: https://koi141.github.io/dbsec-tutorials/
    :og:site_name: Oracle DB Security Tutorial
 
 
@@ -14,11 +14,11 @@ Oracle DB Security Tutorial
 .. raw:: html
 
    <p align="left">
-      <a href="https://github.com/koi141/demo-dbsec">
-         <img src="https://img.shields.io/github/last-commit/koi141/demo-dbsec" alt="Last Commit">
+      <a href="https://koi141.github.io/dbsec-tutorials/">
+         <img src="https://img.shields.io/github/last-commit/koi141/dbsec-tutorials" alt="Last Commit">
       </a>
-      <a href="https://github.com/koi141/demo-dbsec">
-         <img src="https://img.shields.io/github/commit-activity/w/koi141/demo-dbsec" alt="Commit Activity">
+      <a href="https://koi141.github.io/dbsec-tutorials/">
+         <img src="https://img.shields.io/github/commit-activity/w/koi141/dbsec-tutorials" alt="Commit Activity">
       </a>
    </p>
 
@@ -31,114 +31,155 @@ Oracle Databaseのセキュリティ機能を簡単に試してみるチュー�
    | そのため、実際の結果とは若干異なる場合がありますのでご了承ください。
 
 
+***************************************************
+環境を準備する
+***************************************************
+
 .. grid:: 1
 
    .. grid-item-card::
 
       .. toctree::
          :maxdepth: 1
-         :caption: 環境を準備する
          :glob:
 
          /setupEnv/*
 
+
+***************************************************
+暗号化・マスキング
+***************************************************
+
 .. grid:: 2
-   :gutter: 2
+    :gutter: 2
 
-   .. grid-item-card::
-      :padding: 1
+    .. grid-item-card::
+        :padding: 1
 
-      .. toctree::
-         :maxdepth: 1
-         :caption: 透過的データ暗号化 (TDE)
-         :glob:
-         
-         /tde/*
-
-   .. grid-item-card::
-      :padding: 1
-      
-      .. toctree::
-         :maxdepth: 1
-         :caption: ネイティブ・ネットワーク暗号化
-         :glob:
-         
-         /nne/*
-
-   .. grid-item-card::
-      :padding: 1
-
-      .. toctree::
-         :maxdepth: 1
-         :caption: Data Redaction
-         :glob:
-         
-         /redact/*
-
-   .. grid-item-card::
-      :padding: 1
-
-      .. toctree::
-         :maxdepth: 1
-         :caption: Virtual Private Database
-         :glob:
-         
-         /vpd/*
-
-   .. grid-item-card::
-      :padding: 1
-
-      .. toctree::
-         :maxdepth: 1
-         :caption: SQL Firewall
-         :glob:
-         
-         /sqlfirewall/*
-
-   .. grid-item-card::
-      :padding: 1
-
-      .. toctree::
-         :maxdepth: 1
-         :caption: Database Vault
-         :glob:
-         
-         /dbv/*
-
-   .. grid-item-card::
-      :padding: 1
-
-      .. toctree::
-         :maxdepth: 1
-         :caption: Oracle Label Security
-         :glob:
-         
-         /ols/*
-   
-   .. grid-item-card::
-      :padding: 1
-
-      .. toctree::
-         :maxdepth: 1
-         :caption: Oracle Data Safe（準備中）
-
-         /datasafe/1_setup.rst         
-
-   .. grid-item-card::
-         :padding: 1
-
-         .. toctree::
+        .. toctree::
             :maxdepth: 1
-            :caption: グローバル認証（準備中）
-
-            /globalAuthn/*         
-
-   .. grid-item-card::
-         :padding: 1
-
-         .. toctree::
-            :maxdepth: 1
-            :caption: 統合監査（準備中）
+            :caption: 透過的データ暗号化 (TDE)
             :glob:
+            
+            /tde/*
 
-            /unifiedAudit/*  
+    .. grid-item-card::
+        :padding: 1
+        
+        .. toctree::
+            :maxdepth: 1
+            :caption: ネイティブ・ネットワーク暗号化
+            :glob:
+            
+            /nne/*
+
+    .. grid-item-card::
+        :padding: 1
+
+        .. toctree::
+            :maxdepth: 1
+            :caption: Data Redaction
+            :glob:
+            
+            /redact/*
+   
+    .. grid-item-card::
+        :padding: 1
+
+        .. toctree::
+            :maxdepth: 1
+            :caption: Oracle Data Safe（準備中）
+
+            /datasafe/1_setup.rst         
+
+
+
+***************************************************
+アクセス制御
+***************************************************
+
+.. grid:: 2
+    :gutter: 2
+
+    .. grid-item-card::
+        :padding: 1
+
+        .. toctree::
+            :maxdepth: 1
+            :caption: Virtual Private Database
+            :glob:
+            
+            /vpd/*
+
+    .. grid-item-card::
+        :padding: 1
+
+        .. toctree::
+            :maxdepth: 1
+            :caption: SQL Firewall
+            :glob:
+            
+            /sqlfirewall/*
+
+    .. grid-item-card::
+        :padding: 1
+
+        .. toctree::
+            :maxdepth: 1
+            :caption: Database Vault
+            :glob:
+            
+            /dbv/*
+
+    .. grid-item-card::
+        :padding: 1
+
+        .. toctree::
+            :maxdepth: 1
+            :caption: Oracle Label Security
+            :glob:
+            
+            /ols/*
+
+
+
+***************************************************
+認証
+***************************************************
+
+.. grid:: 2
+    :gutter: 2
+
+    .. grid-item-card::
+        :padding: 1
+
+        .. toctree::
+            :maxdepth: 1
+            :glob:
+            :caption: IAM DBパスワード
+
+            /authn/global/oci-dbcredential/*
+
+    .. grid-item-card::
+        :padding: 1
+
+        .. toctree::
+            :maxdepth: 1
+            :glob:
+            :caption: IAM DBトークン
+
+            /authn/global/oci-dbtoken/*
+
+
+.. grid:: 2
+    :gutter: 2
+
+    .. grid-item-card::
+        :padding: 1
+
+        .. toctree::
+            :maxdepth: 1
+            :glob:
+            :caption: 多要素認証（MFA）
+
+            /authn/password/mfa/*
