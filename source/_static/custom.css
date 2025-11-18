@@ -1,0 +1,14 @@
+.bd-article-container ul {
+    padding-inline-start: 1em !important;
+    margin-left: 0 !important;
+}
+.bd-article-container dd {
+    margin-left: 1em !important;
+}
+.bd-article-container ul ul {
+    padding-inline-start: 1.2em !important;
+}
+
+dt {
+    font-weight: 400;
+}
