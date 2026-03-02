@@ -1,0 +1,323 @@
+---
+title: Oracle Database 26ai FREEの準備
+description: Oracle Database 26ai FREEのインストールと利用可能な機能、環境構築手順を解説します。
+sidebar:
+  order: 1
+---
+import { LinkButton } from '@astrojs/starlight/components';
+
+このページでは、Oracle Database 26ai FREEのインストールと利用可能な機能、環境構築手順を解説します。
+
+## 実施内容
+
+- Oracle Databse 26ai FREEをインストールし、DBを作成する
+
+## Oracle AI Database 26ai 
+
+Oracle Database 23ai をアップグレードし、データベース~~になる形として「Oracle AI Database 26ai」としてリリースされました。
+バージョンとしては `23.26.0000` となり、23ai をアップデートするだけで使用することができます。
+
+
+### 26ai 対応環境
+
+26ai は以下の環境にてご使用いただけます。(2026年2月時点)
+
+**Oracle Cloud 環境**  
+- Base Database Service
+- Exadata Database Service
+- Autonomous Database
+
+**オンプレミス環境**
+- FREE (無償版)
+- Enterprise Edition for Linux x86-64
+- Oracle Database Appliance
+- Exadata Database Appliance
+
+このサイトで紹介する手順は、無償版である 26ai FREE で実施することができます。一方、このサイトに例示する実行結果においては Base Database Service など Oracle Cloud の DBサービスを使用することもあります。そのため、一部構成が異なる場合があることにご注意ください。
+
+
+## 26ai FREE
+
+26aiにて提供される新しい無償版バージョン「FREE」では、従来の XE (Express Edition) と比較してセキュリティ機能が多く解放されており、気軽に試しやすくなっています。
+そのため、TDE や Database Vault など、従来の無償版 XE では使えなかった機能が無償のまま体験することができます。
+
+セキュリティにおいて使用可能な機能は以下の通りです。
+
+- TDE
+- Data Redaction
+- Oracle Label Security
+- Virtual Private Vault
+- Database Vault
+- SQL Firewall
+- ファイングレイン監査
+
+その他 FREE で利用できる機能は[こちら](https://apex.oracle.com/database-features/)からも確認することができます。
+
+
+
+### 26ai FREE を利用できる環境
+
+26ai FREE は以下の３つのプラットフォーム形式で提供されています。
+
+- コンテナ（docker, podman）
+- VMイメージ（VM VirtualBox）
+- rpmパッケージ（Oracle Linux 8,9, Windows）
+
+各インストール手順については、[こちらのドキュメント](https://docs.oracle.com/cd/G11854_01/xeinl/index.html)に記載がありますので、お好みの方法で環境を構築してください。
+
+rpmでインストールする場合、[OCIチュートリアル](https://oracle-japan.github.io/ocitutorials/ai-vector-search/ai-vector102-23aifree-install)でもインストール手順が紹介されていますので、こちらも参考になります。OCIチュートリアルでの手順の場合、表領域の作成手順は不要ですのでその前の手順までを実施してください。
+
+> **FREEのライセンス制限**
+> - FREEでは処理に使われるCPUは2コアに自動的に制限されます。また、RAMは最大2GBまでとなっており、利用可能な場合でも超過することはできません。
+> - データの使用量は最大12GBであり、これを超えて増加すると「ORA-12954: リクエストが、最大許容データベース・サイズの12GBを超えています」というエラーになります。
+> - 参考：[ライセンス制限](https://docs.oracle.com/cd/G11854_01/xeinl/licensing-restrictions.html#GUID-A3BF7927-EC58-40FC-96B6-1A5E135D19BA)
+
+
+## 26ai FREE をインストールする
+
+ここでは一部の環境においてですが、26ai FREE をインストールする手順を示します。
+
+### Oracle Linux 9 でのインストール例
+環境
+- Oracle Linux 9 - x98-86
+- OCI Compute Shape - VM.Standard.E5.Flex
+- OCI Compute Image - Oracle-Linux-9.6-2025.11.20-0
+
+
+Oracle Databaseをダウンロードするためには、まず事前に oracle ユーザーなど事前の設定が必要です。その辺りのセットアップを自動で行ってくれるパッケージとして `oracle-ai-database-preinstall-26ai` というものがありますので、これをまずインストールします。
+
+あらかじめ、パッケージマネージャーで対象のパッケージがあるかを確認しておきます。
+```shell
+[opc@inst-db ~]$ dnf search preinstall
+Ksplice for Oracle Linux 9 (x86_64)                                                      66 MB/s |  16 MB     00:00
+...
+========================================== Name & Summary Matched: preinstall ==========================================
+oracle-ai-database-preinstall-26ai.src : Oracle AI Database Preinstallation RPM
+oracle-ai-database-preinstall-26ai.x86_64 : Oracle AI Database Preinstallation RPM
+oracle-database-preinstall-19c.src : Oracle Database Preinstallation RPM
+oracle-database-preinstall-19c.x86_64 : Oracle Database Preinstallation RPM
+oracle-database-preinstall-23ai.src : Oracle Database Preinstallation RPM
+oracle-database-preinstall-23ai.x86_64 : Oracle Database Preinstallation RPM
+```
+
+Red Hatなど、別のOSを使用していてリポジトリにない場合は、yumサイトからダウンロードすることもできますのでRPMファイルを直接調達しても問題ありません。この場合、RPMファイルは以下のリンクから取得することができます。
+- https://yum.oracle.com/repo/OracleLinux/OL8/appstream/x86_64/
+- https://yum.oracle.com/repo/OracleLinux/OL9/appstream/x86_64/
+
+対象の Preinstall RPM をインストールします。
+
+```
+sudo dnf -y install oracle-ai-database-preinstall-26ai
+```
+
+oracleユーザーやその周辺のグループが作成されたことが確認できます。
+
+```shell
+[opc@inst-db ~]$ id oracle
+uid=54321(oracle) gid=54321(oinstall) groups=54321(oinstall),54322(dba),54323(oper),54324(backupdba),54325(dgdba),54326(kmdba),54330(racdba)
+```
+
+具体的な変更点については `/var/log/oracle-ai-database-preinstall-26ai/` 配下にあるログにて確認することができます。
+```shell
+$ sudo cat /var/log/oracle-ai-database-preinstall-26ai/results/orakernel.log
+Adding group oinstall with gid 54321
+Adding group dba with gid 54322
+Adding group oper with gid 54323
+Adding group backupdba with gid 54324
+Adding group dgdba with gid 54325
+Adding group kmdba with gid 54326
+Adding group racdba with gid 54330
+Adding user oracle with user id 54321, initial login group oinstall, supplementary groups oinstall,dba,oper,backupdba,dg
+dba,kmdba,racdba and  home directory /home/oracle
+Changing ownership of /home/oracle to oracle:oinstall
+Please set password for user - oracle
+uid=54321(oracle) gid=54321(oinstall) groups=54321(oinstall),54322(dba),54323(oper),54324(backupdba),54325(dgdba),54326(
+kmdba),54330(racdba)
+User creation passed
+
+Saving a copy of the initial sysctl.conf
+Verifying  kernel parameters as per Oracle recommendations...
+Trying to remove instances of  - setting for fs.file-max is
+Adding fs.file-max = 6815744
+Trying to remove instances of  - setting for kernel.sem is
+Adding kernel.sem = 250 32000 100 128
+...
+```
+
+つづいて、26ai FREE のダウンロードページにアクセスし、該当するアーキテクチャのRPMパッケージを対象のホストにダウンロードします。
+以下の実行例では `wget` を使用してダウンロードしています。
+
+<LinkButton
+  href="https://www.oracle.com/jp/database/free/get-started/"
+  variant="minimal"
+  icon="external"
+  iconPlacement="start"
+>
+  ダウンロードサイト：Oracle AI Database 26aiを使い始める
+</LinkButton>
+
+```shell
+[opc@inst-db ~]$ wget https://download.oracle.com/otn-pub/otn_software/db-free/oracle-ai-database-free-26ai-23.26.1-1.el9.x86_64.rpm
+--2026-02-03 14:10:39--  https://download.oracle.com/otn-pub/otn_software/db-free/oracle-ai-database-free-26ai-23.26.1-1.el9.x86_64.rpm
+Resolving download.oracle.com (download.oracle.com)... 23.214.109.212
+...
+oracle-ai-database-free-26ai- 100%[=================================================>]   1.39G  2.83MB/s    in 8m 25s
+
+2026-02-03 14:19:05 (2.82 MB/s) - ‘oracle-ai-database-free-26ai-23.26.1-1.el9.x86_64.rpm’ saved [1489765640/1489765640]
+
+[opc@inst-db ~]$ ls -l
+total 1454852
+-rw-r--r--. 1 opc opc 1489765640 Jan 23 09:08 oracle-ai-database-free-26ai-23.26.1-1.el9.x86_64.rpm
+```
+
+ダウンロードしたのち、対象のファイルをインストールします。ファイル名は適宜それぞれのファイル名に置き換えてください。
+
+```
+sudo dnf -y install oracle-ai-database-free-26ai-23.26.1-1.el9.x86_64.rpm
+```
+
+インストール後、Oracle Databaseを作成します。構成スクリプトを実行することで簡単にデータベースを構成することができます。
+デフォルトでは「FREE」という名でCDBが、「FREEPDB1」という名でPDBが作成されます。
+
+ここにおける設定は `/etc/sysconfig/oracle-free–26ai.conf`設定ファイルにて一部変更することができますが、ここではそのまま実行を行います。
+
+```
+/etc/init.d/oracle-free-26ai configure
+```
+
+実行するとSYS、SYSTEMおよびPDBADMINのパスワードの設定が求められますので入力します。いずれのユーザーも同じパスワードが設定されます。
+
+```shell "<パスワードを入力>" "<再度パスワードを入力>"
+[opc@inst-db ~]$ sudo /etc/init.d/oracle-free-26ai configure
+Specify a password to be used for database accounts. Oracle recommends that the password entered should be at least 8 characters in length, contain at least 1 uppercase character, 1 lower case character and 1 digit [0-9]. 
+Note that the same password will be used for SYS, SYSTEM and PDBADMIN accounts: <パスワードを入力>
+Confirm the password: <再度パスワードを入力>
+Configuring Oracle Listener.
+Listener configuration succeeded.
+Configuring Oracle AI Database FREE.
+Enter SYS user password:
+*****************
+Enter SYSTEM user password:
+*******************
+Enter PDBADMIN User Password:
+*********************
+Prepare for db operation
+7% complete
+Copying database files
+29% complete
+Creating and starting Oracle instance
+30% complete
+...
+43% complete
+Completing Database Creation
+47% complete
+49% complete
+50% complete
+Creating Pluggable Databases
+54% complete
+71% complete
+Executing Post Configuration Actions
+93% complete
+Running Custom Scripts
+100% complete
+Database creation complete. For details check the logfiles at:
+ /opt/oracle/cfgtoollogs/dbca/FREE.
+Database Information:
+Global Database Name:FREE
+System Identifier(SID):FREE
+Look at the log file "/opt/oracle/cfgtoollogs/dbca/FREE/FREE.log" for further details.
+
+Connect to Oracle AI Database using one of the connect strings:
+     Pluggable database: inst-db/FREEPDB1
+     Multitenant container database: inst-db
+```
+
+
+```shell title="参考：設定ファイル"
+[opc@inst-db ~]$ sudo cat /etc/sysconfig/oracle-free-26ai.conf
+#This is a configuration file to setup the Oracle AI Database.
+#It is used when running '/etc/init.d/oracle-free-26ai configure'.
+
+# LISTENER PORT used Database listener, Leave empty for automatic port assignment
+LISTENER_PORT=
+
+# Character set of the database
+CHARSET=AL32UTF8
+
+# Database file directory
+# If not specified, database files are stored under Oracle base/oradata
+DBFILE_DEST=
+
+# DB Domain name
+DB_DOMAIN=
+
+# Configure TDE
+CONFIGURE_TDE=false
+
+# Encrypt Tablespaces list, Leave empty for user tablespace alone or provide ALL for encrypting all tablespaces
+# For specific tablespaces use SYSTEM:true,SYSAUX:false
+ENCRYPT_TABLESPACES=
+
+# SKIP Validations, memory, space
+SKIP_VALIDATIONS=false
+```
+
+Oracle Databaseを作成できた後は、環境変数の設定を行います。こちらは以下を実行することで構成することができます。
+
+```
+# oracleユーザーで実行
+sudo su - oracle
+
+export ORACLE_SID=FREE 
+export ORAENV_ASK=NO 
+. /opt/oracle/product/26ai/dbhomeFree/bin/oraenv
+```
+
+環境を整えたら、最後に環境変数 `$ORACLE_HOME` と `lsnrctl` ユーティリティにてリスナーの確認を行います。1521番ポートでリッスンしていることがわかります。
+
+```shell
+[oracle@inst-db ~]$ echo $ORACLE_HOME
+/opt/oracle/product/26ai/dbhomeFree
+
+[oracle@inst-db ~]$ lsnrctl status
+
+LSNRCTL for Linux: Version 23.26.1.0.0 - Production on 03-FEB-2026 14:52:30
+
+Copyright (c) 1991, 2026, Oracle.  All rights reserved.
+
+Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=inst-db.sub01150410170.koivcntest.oraclevcn.com)(PORT=1521)))
+STATUS of the LISTENER
+------------------------
+Alias                     LISTENER
+Version                   TNSLSNR for Linux: Version 23.26.1.0.0 - Production
+Start Date                03-FEB-2026 14:39:32
+Uptime                    0 days 0 hr. 12 min. 57 sec
+Trace Level               off
+Security                  ON: Local OS Authentication
+SNMP                      OFF
+Default Service           FREE
+Listener Parameter File   /opt/oracle/product/26ai/dbhomeFree/network/admin/listener.ora
+Listener Log File         /opt/oracle/diag/tnslsnr/inst-db/listener/alert/log.xml
+Listening Endpoints Summary...
+  (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=inst-db.sub01150410170.koivcntest.oraclevcn.com)(PORT=1521)))
+  (DESCRIPTION=(ADDRESS=(PROTOCOL=ipc)(KEY=EXTPROC1521)))
+Services Summary...
+Service "49ed73f154baefe2e0630a00000a3514" has 1 instance(s).
+  Instance "FREE", status READY, has 1 handler(s) for this service...
+Service "FREE" has 1 instance(s).
+  Instance "FREE", status READY, has 1 handler(s) for this service...
+Service "FREEXDB" has 1 instance(s).
+  Instance "FREE", status READY, has 1 handler(s) for this service...
+Service "freepdb1" has 1 instance(s).
+  Instance "FREE", status READY, has 1 handler(s) for this service...
+The command completed successfully
+```
+
+環境設定のためのスクリプトは接続し直すたびに実行する必要があるため、`.bashrc` などに入れておくと楽です。
+
+
+
+## 関連リンク
+- [Oracle AI Database 26ai ドキュメント（日本語）](https://docs.oracle.com/cd/G47991_01/books.html)
+- [Oracle AI Database Freeインストレーション・ガイド, 26ai for Linux（日本語）](https://docs.oracle.com/cd/G47991_01/xeinl/index.html)
+- [Oracle Database 23ai Overview - Speaker Deck](https://speakerdeck.com/oracle4engineer/oracle-database-23ai-overview)

@@ -1,0 +1,353 @@
+---
+title: NNE接続の構成
+description: ネイティブ・ネットワーク暗号化（NNE）を有効化し、暗号化状態を確認します。
+sidebar:
+  order: 1
+---
+import { Aside, LinkButton } from '@astrojs/starlight/components';
+
+> **実施内容**
+> - DBクライアントの用意する
+> - Wireshark（tshark）をインストールし、通信をキャプチャできる状態にする
+> - `sqlnet.ora` ファイルを編集し、ネイティブ・ネットワーク暗号化を有効化する
+> - tsharkでパケットが暗号化されているかを確認する
+
+## 1-1. DBクライアントの用意
+
+クライアントとデータベース間の通信を確認するため、Oracle Database に接続できるクライアントツールを用意します。代表的なツールは次のとおりです。
+
+- SQL Developer
+- SQL\*Plus
+- SQLcl
+
+いずれかのツールで FREEPDB1 に接続できる環境をご準備ください。
+本手順では SQLcl を例にしますが、SQL Developer/SQL*Plus でも問題ありません。
+
+SQLclのインストールについては、以下の手順がありますので、ご参考ください。
+
+<LinkButton
+  href="../../../../getting-started/oracle-client"
+  variant="minimal"
+  icon="external"
+  iconPlacement="start"
+>
+  SQLclのインストール
+</LinkButton>
+
+次に接続情報（サービス名・ホスト・ポート）の確認を行います。  
+サービス名など、接続のための情報はDBサーバーで `lsnrctl`コマンドを実行することで確認できます。
+
+```bash
+[oracle@db-tut ~]$ lsnrctl status
+
+LSNRCTL for Linux: Version 23.26.1.0.0 - Production on 09-FEB-2026 04:52:16
+
+Copyright (c) 1991, 2026, Oracle.  All rights reserved.
+
+Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=db-tut.sub01150410170.koivcntest.oraclevcn.com)(PORT=1521)))
+STATUS of the LISTENER
+------------------------
+Alias                     LISTENER
+Version                   TNSLSNR for Linux: Version 23.26.1.0.0 - Production
+Start Date                09-FEB-2026 04:05:27
+Uptime                    0 days 0 hr. 46 min. 49 sec
+Trace Level               off
+Security                  ON: Local OS Authentication
+SNMP                      OFF
+Default Service           FREE
+Listener Parameter File   /opt/oracle/product/26ai/dbhomeFree/network/admin/listener.ora
+Listener Log File         /opt/oracle/diag/tnslsnr/db-tut/listener/alert/log.xml
+Listening Endpoints Summary...
+  (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=db-tut.sub01150410170.koivcntest.oraclevcn.com)(PORT=1521)))
+  (DESCRIPTION=(ADDRESS=(PROTOCOL=ipc)(KEY=EXTPROC1521)))
+Services Summary...
+Service "4a017ab47ba8e1ede0631800000a54a4" has 1 instance(s).
+  Instance "FREE", status READY, has 1 handler(s) for this service...
+Service "FREE" has 1 instance(s).
+  Instance "FREE", status READY, has 1 handler(s) for this service...
+Service "FREEXDB" has 1 instance(s).
+  Instance "FREE", status READY, has 1 handler(s) for this service...
+Service "freepdb1" has 1 instance(s).
+  Instance "FREE", status READY, has 1 handler(s) for this service...
+The command completed successfully
+```
+出力の `Listening Endpoints Summary` からHOSTやPORT、`Services Summary` から freepdb1 などのサービス名（SERVICE_NAME）を確認できます。
+
+
+## 1-2. Wireshark のインストール
+
+DBサーバーで受信した通信をキャプチャし、暗号化が行われているかどうかを確認します。
+ここではその確認手段として、パケットキャプチャ・ツール tshard (Wireshark CLI) をDBサーバーへインストールします。
+
+```
+sudo dnf -y install wireshark
+```
+
+```shell
+-- インストールを確認
+$ tshark --version
+TShark (Wireshark) 3.4.10 (Git commit 733b3a137c2b)
+
+Copyright 1998-2021 Gerald Combs <gerald@wireshark.org> and contributors.
+License GPLv2+: GNU GPL version 2 or later <https://www.gnu.org/licenses/gpl-2.0.html>
+This is free software; see the source for copying conditions. There is NO
+warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+...
+```
+
+これで、Wiresharkのインストールが完了しました。
+
+
+## 2-1. パケット・キャプチャ準備
+
+DBサーバー側でポート1521を開放し、通信を受け付ける準備をします。
+OCI の Oracle Linux インスタンスでは `firewalld` が設定されているため、次のコマンドでポート1521を解放します。
+
+```
+sudo firewall-cmd --permanent --add-port=1521/tcp
+sudo firewall-cmd --reload
+```
+
+インターフェース名と1521番ポートが解放されていることを確認します。
+
+```shell
+[opc@db-tut ~]$ sudo firewall-cmd --list-all
+public (active)
+  target: default
+  icmp-block-inversion: no
+  interfaces: enp0s5
+  sources:
+  services: dhcpv6-client ssh
+  ports: 1521/tcp
+  protocols:
+  forward: yes
+  masquerade: no
+  forward-ports:
+  source-ports:
+  icmp-blocks:
+  rich rules:
+```
+
+次に、tsharkコマンドを使ってネットワークインターフェースを確認しします。  
+（インターフェース名は上のfirewalldのコマンド結果からも確認ができます。）
+
+```shell
+# インターフェースの番号を確認
+[opc@db-tut ~]$ sudo tshark -D
+Running as user "root" and group "root". This could be dangerous.
+1. enp0s5
+2. any
+3. lo (Loopback)
+4. bluetooth-monitor
+5. usbmon4
+...
+```
+
+確認したインターフェース名`enp0s5` を使用して、TCP/1521 の通信をキャプチャします。
+
+```
+# TCP/1521 で受信する通信をキャプチャ
+sudo tshark -i 1 -Y 'tcp.port==1521' -x
+```
+
+これで、DBサーバーで受け取った通信がキャプチャされるようになります。
+
+
+## 2-2. クライアント側でDBに接続し、平文が見えることを確認
+
+簡易接続子を使って、SQLcl でOracleデータベースに接続します。
+なお、DBホストから `localhost` で接続すると、外部インターフェースを通らずキャプチャされません。そのため、本手順では別ホスト（リモートクライアント）から接続を行います。
+接続のためのコマンド構成は以下の通りです。
+
+```
+sql <ユーザー名>>/<パスワード>@<接続先ホスト>:<ポート>/<サービス名>
+```
+
+上記のコマンドで、SYSTEMやHRユーザーなど任意のユーザーで接続を行います。  
+（実行例ではパスワードを省略することで証跡にパスワードが残らないように接続しています。）
+
+またここでは例として、サンプルスキーマ HR の jobs 表を参照していますが、これはどのような表・ビューでも構いません。
+
+```shell
+➜  ~ sql system@159.13.59.170:1521/freepdb1
+
+SQLcl: Release 25.3 Production on Mon Feb 09 14:57:18 2026
+
+Copyright (c) 1982, 2026, Oracle.  All rights reserved.
+
+Password? (**********?) ******************
+Last Successful login time: Mon Feb 09 2026 14:57:24 +09:00
+
+Connected to:
+Oracle AI Database 26ai Free Release 23.26.1.0.0 - Develop, Learn, and Run for Free
+Version 23.26.1.0.0
+
+SQL>
+
+-- 適当なSQLを発行
+SQL> select * from hr.jobs;
+
+JOB_ID     JOB_TITLE                       MIN_SALARY MAX_SALARY
+__________ _______________________________ __________ __________
+AD_PRES    President                            20080      40000
+AD_VP      Administration Vice President        15000      30000
+AD_ASST    Administration Assistant              3000       6000
+FI_MGR     Finance Manager                       8200      16000
+FI_ACCOUNT Accountant                            4200       9000
+...
+
+-- 接続を終了する
+SQL> exit
+```
+
+この時点で、DBサーバーでパケットキャプチャを実行している端末を見ると、jobs テーブルの内容が平文で送信されていることが確認できます。
+
+```text
+（一部抜粋）
+...
+0330  07 49 54 5f 50 52 4f 47 0a 50 72 6f 67 72 61 6d   .IT_PROG.Program
+0340  6d 65 72 02 c2 29 02 c3 02 15 01 04 0f 07 06 4d   mer..).........M
+0350  4b 5f 4d 41 4e 11 4d 61 72 6b 65 74 69 6e 67 20   K_MAN.Marketing
+0360  4d 61 6e 61 67 65 72 02 c2 5b 03 c3 02 33 15 01   Manager..[...3..
+0370  04 0f 07 06 4d 4b 5f 52 45 50 18 4d 61 72 6b 65   ....MK_REP.Marke
+0380  74 69 6e 67 20 52 65 70 72 65 73 65 6e 74 61 74   ting Representat
+0390  69 76 65 02 c2 29 02 c2 5b 15 01 02 03 07 06 48   ive..)..[......H
+03a0  52 5f 52 45 50 1e 48 75 6d 61 6e 20 52 65 73 6f   R_REP.Human Reso
+03b0  75 72 63 65 73 20 52 65 70 72 65 73 65 6e 74 61   urces Representa
+03c0  74 69 76 65 15 01 04 0f 07 06 50 52 5f 52 45 50   tive......PR_REP
+03d0  1f 50 75 62 6c 69 63 20 52 65 6c 61 74 69 6f 6e   .Public Relation
+03e0  73 20 52 65 70 72 65 73 65 6e 74 61 74 69 76 65   s Representative
+```
+
+つまりこの状態では、データが平文でネットワーク上に送信されており、暗号化が行われていないことが分かります。
+それでは、次の手順で通信の暗号化を設定します。
+
+
+## 2-3. ネイティブ・ネットワーク暗号化を有効化する
+
+ネイティブ暗号化は `sqlnet.ora` のパラメータで制御します。
+通信の暗号化を有効化のためには、クライアントとサーバー側のどちらか（または両方）で設定を行うことができますが、今回はDBサーバーの `$ORACLE_HOME/network/admin` にある `sqlnet.ora` ファイルを編集します。
+
+まず、 `sqlnet.ora` ファイルの場所を確認します。は通常 `$ORACLE_HOME/network/admin` にありますが、`TNS_ADMIN` を指定している場合はそちらを使用します。
+
+```shell
+[oracle@db-tut ~]$ ls $ORACLE_HOME/network/admin
+listener.ora  samples  shrept.lst  sqlnet.ora  tnsnames.ora
+```
+
+次に `sqlnet.ora` を編集します。最小構成として、サーバ側で暗号化を「必須」にし、許可する暗号方式を指定します。
+
+```diff
+$ vi $ORACLE_HOME/network/admin/sqlnet.ora
+
+# sqlnet.ora Network Configuration File: /opt/oracle/product/26ai/dbhomeFree/network/admin/sqlnet.ora
+# Generated by Oracle configuration tools.
+
+NAMES.DIRECTORY_PATH= (TNSNAMES, EZCONNECT)
+
++ SQLNET.ENCRYPTION_SERVER = REQUIRED
++ SQLNET.ENCRYPTION_TYPES_SERVER = (AES256, AES192, AES128)
+```
+
+これにより通信が暗号化されるようになります。
+
+<Aside type="caution">
+暗号化だけでなく改ざん検出（整合性チェック）も有効にしたい場合は、次も追記します。
+```
+SQLNET.CRYPTO_CHECKSUM_SERVER = REQUIRED
+SQLNET.CRYPTO_CHECKSUM_TYPES_SERVER = (SHA512)
+```
+</Aside>
+
+
+## 2-4. 暗号化有効化後、再度接続してキャプチャを確認する
+
+
+クライアント側で再びDBに接続し、先ほどと同様に問い合わせを行います。
+
+```sql
+➜  ~ sql system@159.13.59.170:1521/freepdb1
+...
+Password? (**********?) ******************
+...
+
+SQL> select * from hr.jobs;
+
+JOB_ID     JOB_TITLE                       MIN_SALARY MAX_SALARY
+__________ _______________________________ __________ __________
+AD_PRES    President                            20080      40000
+AD_VP      Administration Vice President        15000      30000
+AD_ASST    Administration Assistant              3000       6000
+FI_MGR     Finance Manager                       8200      16000
+FI_ACCOUNT Accountant                            4200       9000
+AC_MGR     Accounting Manager                    8200      16000
+AC_ACCOUNT Public Accountant                     4200       9000
+SA_MAN     Sales Manager                        10000      20080
+SA_REP     Sales Representative                  6000      12008
+...
+
+SQL> exit
+```
+
+DBサーバー側 tshark のHEXダンプでは、暗号化前に見えていたような 平文文字列が見えにくくなり、ランダムなバイト列が確認できます。
+
+```text
+（一部抜粋）
+...
+0080  3f fc cd f4 4b c8 b3 4f ce 2e 3b a5 ba cb 28 3b   ?...K..O..;...(;
+0090  ae 64 39 93 bc f6 81 b3 ef 8c 3c 4f a0 76 91 c1   .d9.......<O.v..
+00a0  6d ad 02 c7 a4 6a fe ef 90 7d 58 b8 09 8e f8 0f   m....j...}X.....
+00b0  9d 83 5e 68 48 f4 22 ee f8 8d da a0 1d 4d c0 96   ..^hH."......M..
+00c0  31 82 0a 14 3a 05 ea c7 59 68 7a b8 c5 13 bf 06   1...:...Yhz.....
+00d0  b9 e3 8c 61 27 79 c9 f3 a5 f7 27 30 ec c3 30 a4   ...a'y....'0..0.
+00e0  bd 78 dc 46 b8 a2 74 75 7b 38 a2 b6 81 38 94 ea   .x.F..tu{8...8..
+00f0  1b 63 d1 2e 32 25 01 0b 67 20 12 72 87 6b 3f 30   .c..2%..g .r.k?0
+0100  1e eb 9e a6 95 0d 14 60 07 2e b2 8a c2 95 17 34   .......`.......4
+0110  6c 2c c3 4a 1f 76 62 e9 0e 59 e2 74 43 c1 5b 31   l,.J.vb..Y.tC.[1
+0120  1b f3 86 fa e5 37 4b 58 6c da d8 9e db 0c ef 7e   .....7KXl......~
+0130  f7 dd 62 3e 49 52 d4 04 de 8f 4d b7 56 96 29 d4   ..b>IR....M.V.).
+0140  4e 9f fa 0e cf 37 3a d7 90 ae f9 59 b5 b7 3a 3f   N....7:....Y..:?
+0150  f9 88 11 36 d9 d1 1a d9 db fb dd f6 69 ff ef f6   ...6........i...
+...
+```
+
+このように通信が確実に暗号化されていることが確認できます。
+
+## 2-5. DBビューで「実際に使われた暗号化」を確認する
+
+また、パケットの見え方だけでなく、DB内部からも「その接続で暗号化が使われたか」を確認できます。
+
+```
+select network_service_banner from v$session_connect_info where sid in (select distinct sid from v$mystat);
+```
+
+使用中のアルゴリズムなど、使用可能な暗号化サービスおよび整合性検証サービスに関するバナー情報が確認できます。
+```
+select network_service_banner from v$session_connect_info where sid in (select distinct sid from v$mystat);
+```
+
+```sql
+SQL> select network_service_banner from v$session_connect_info where sid in (select distinct sid from v$mystat);
+
+NETWORK_SERVICE_BANNER
+_____________________________________________________________________________
+TCP/IP NT Protocol Adapter for Linux: Version 23.26.1.0.0 - Production
+Encryption service for Linux: Version 23.26.1.0.0 - Production
+AES256 Encryption service adapter for Linux: Version 23.26.1.0.0 - Production
+Crypto-checksumming service for Linux: Version 23.26.1.0.0 - Production
+```
+
+Oracle Netのネイティブ暗号化および整合性が使用されていなかった場合でも、この結果には使用可能なセキュリティ・サービス(Oracle Databaseソフトウェアにリンクされているサービス)のエントリが含まれます。
+しかし、「暗号化サービス自体は利用可能だが、実際にこの接続では特定アルゴリズムが使われていない」場合は、以下の用にアルゴリズム名が出ないような結果になります。
+
+```sql
+SQL> select network_service_banner from v$session_connect_info where sid in (select distinct sid from v$mystat);
+
+NETWORK_SERVICE_BANNER
+_______________________________________________________________________
+TCP/IP NT Protocol Adapter for Linux: Version 23.26.1.0.0 - Production
+Encryption service for Linux: Version 23.26.1.0.0 - Production
+Crypto-checksumming service for Linux: Version 23.26.1.0.0 - Production
+```
+
+以上で、ネイティブ・ネットワーク暗号化を有効化し、パケット上で平文が見えにくくなること、そしてDBのバナーで実際に使われたアルゴリズムが確認できました。

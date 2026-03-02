@@ -1,0 +1,110 @@
+---
+title: Oracle DBSec Tutorial
+description: Get started building your docs site with Starlight.
+template: splash # Remove or comment out this line to display the site sidebar on this page.
+hero:
+  tagline: Oracle Databaseのセキュリティ機能を短い手順で試せるチュートリアル集です。
+  image:
+    file: ../../assets/database-security.png
+  actions:
+    - text: Getting Started
+      link: ./getting-started
+      icon: right-arrow
+      variant: secondary
+    - text: About this Site
+      link: ./about
+      icon: external
+      variant: minimal
+---
+
+import { LinkCard, LinkButton, Card, CardGrid, Icon } from '@astrojs/starlight/components';
+
+## 暗号化・マスキング
+
+<CardGrid>
+  <Card title="透過的データ暗号化（TDE）" icon="seti:lock">
+    データファイルを暗号化し、ディスク上のデータ漏えいリスクを下げます。 
+    クエリに対しては透過的に復号されるため、利用側の改修を最小化できます。
+
+    [> 開く](./encryption/tde/)
+  </Card>
+  <Card title="通信暗号化" icon="approve-check-circle">
+    クライアントとDB間の通信を暗号化し、盗聴リスクを低減します。
+    併せて整合性チェックを有効化することで、通信の改ざん検出も行えます。
+
+    [> 開く](./encryption/network/)
+  </Card>
+  <Card title="Data Redaction" icon="list-format">
+    クエリ結果に対して動的にマスキングを行い、機微情報の表示を抑止します。
+    データ自体を書き換えず、参照時の見せ方だけを制御できる点が特徴です。
+
+    [> 開く](./access-control/data-redaction/)
+  </Card>
+</CardGrid>
+
+## アクセス制御
+<CardGrid>
+  <Card title="Virtual Private Database" icon="puzzle">
+    行・列レベルでアクセス制御を行い、同じ表でもユーザーごとに見えるデータを変えます。
+    アプリケーションのSQLを変えずに、DB側のポリシーで条件を付与できます。
+
+    [> 開く](./access-control/vpd/)
+  </Card>
+  <Card title="Database Vault" icon="seti:lock">
+    職務分離のための制御を追加し、強力な権限ユーザーの操作も制限できます。
+    保護領域や操作ルールを定義し、運用上の不正や誤操作のリスクを下げます。
+
+    [> 開く](./access-control/database-vault/)
+  </Card>
+  <Card title="SQL Firewall" icon="warning">
+    許可されたSQLの特性を基に、逸脱したSQLを検知・遮断する仕組みです。
+    予期しないSQL実行による被害を抑止するための追加防御として使えます。
+
+    [> 開く](./access-control/sql-firewall/)
+  </Card>
+  <Card title="Oracle Label Security" icon="setting">
+    ラベル（分類）に基づいてアクセス制御を行い、データの取り扱い基準を一貫させます。
+    ユーザーのラベルとデータのラベルの関係で、参照・更新可否を判定します。
+
+    [> 開く](./access-control/oracle-label-security/)
+  </Card>
+</CardGrid>
+
+
+
+## 認証
+
+<CardGrid>
+  <Card title="IAM DBパスワード" icon="approve-check-circle">
+    OCI IAM のユーザーを使ってDBへログインする方式です。
+    IAM側のユーザー/グループ管理と、DB側の権限付与を連携することができます。
+
+    [> 開く](./authentication/oci-iam-dbcredential/)
+  </Card>
+
+  <Card title="IAM DBトークン" icon="random">
+    OCI IAM が発行する、短時間で失効するトークンを用いてDBへログインする方式です。
+    長期的に固定の秘密情報を配布・保持する運用を減らせます。
+
+    [> 開く](./authentication/oci-iam-dbtoken/)
+  </Card>
+
+  <Card title="多要素認証（MFA）" icon="phone">
+    パスワードに加えて第二の認証要素を要求し、ログインを強化します。
+    パスワード漏えい時の不正ログインリスクを低減できます。
+
+    [> 開く](./authentication/password-mfa/)
+  </Card>
+</CardGrid>
+
+
+## Oracle Cloud
+
+<CardGrid>
+  <Card title="Oracle Data Safe" icon="cloud-download">
+    監査、セキュリティ評価、機微データ検出などを統合的に扱うクラウドサービスです。
+    複数DBのセキュリティ状況を一元的に可視化できます。
+
+    \> 準備中
+  </Card>
+</CardGrid>

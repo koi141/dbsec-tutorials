@@ -1,0 +1,11 @@
+services:
+  starlight:
+    build: .
+    ports:
+      - "4321:4321"
+    working_dir: /work
+    command: npm run dev -- --host 0.0.0.0 --port 4321
+    volumes:
+      - .:/work:Z
+    stdin_open: true
+    tty: true

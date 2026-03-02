@@ -1,0 +1,199 @@
+---
+title: 2. 表領域の暗号化を行う
+description: 表領域の暗号化を行います
+sidebar:
+  order: 2
+---
+import { LinkCard, Aside } from '@astrojs/starlight/components';
+
+> **実施内容**
+> - 表領域に対して暗号化を行い、データファイルを暗号化
+> - OSコマンドでデータファイルを開き、データが暗号化されていることを確認
+
+
+ここではサンプルデータとしてHRスキーマを使用します。サンプルスキーマの用意手順は、以下をご確認ください。
+
+[リンク](../../../getting-started/sample-schema)
+
+## 2-1. データファイルの確認
+
+ここでは暗号化の確認を行うサンプルデータとしてHRスキーマを使用します。サンプルスキーマの用意手順は以下をご確認ください。
+
+<LinkCard title="サンプルスキーマ（HR）を準備する" href="../../../../getting-started/sample-schema"/>
+
+まず、HRスキーマのデフォルト表領域と、対象のデータファイルパスを確認します。
+
+```sql title="[PDB] SYSユーザー"
+-- HRスキーマの表領域がUSERS表領域であることを確認
+SQL> select username, default_tablespace from dba_users where username ='HR';
+
+USERNAME    DEFAULT_TABLESPACE
+___________ _____________________
+HR          USERS
+
+-- USER表領域のデータファイルのパスを確認
+SQL> select tablespace_name, file_name from dba_data_files where tablespace_name = 'USERS';
+
+TABLESPACE_NAME    FILE_NAME
+__________________ ________________________________________________
+USERS              /opt/oracle/oradata/FREE/FREEPDB1/users01.dbf
+```
+
+## 2-2. 暗号化前：データファイルの中身を確認
+
+TDEで暗号化されていない場合、データファイルに平文に近い情報が残っているため、`strings`コマンドを使用するとデータ文字列を拾うことができます。  
+
+```sql title="[PDB] SYSユーザー"
+-- SQL*Plus / SQLcl では "!" でOSコマンドを実行できる
+SQL> !strings /opt/oracle/oradata/FREE/FREEPDB1/users01.dbf | head -n 20
+}|{z
+W51YFREE
+USERS
+AAAAAAAA
+Africa,
+Oceania,
+Asia,
+Americas,
+Europe
+AAAAAAAA
+AAAAAAAA
+Belgium
+        Argentina
+Nigeria
+Malaysia
+Denmark
+Israel
+Kuwait
+Mexico
+Netherlands
+```
+
+このようにTDEで暗号化されていない場合、 `strings` コマンドである程度のデータ内容が確認できてしまうことが分かります。
+
+## 2-3. 表領域をオンラインで暗号化する
+
+USERS表領域をオンライン（OPENのまま）で暗号化します。
+オンライン暗号化は `ALTER TABLESPACE ... ENCRYPTION ONLINE ... ENCRYPT` で実行できます。
+
+```sql title="[PDB] SYSユーザー"
+-- 実行時間を計測
+SQL> set timing on
+
+-- USERS表領域を暗号化
+SQL> alter tablespace users encryption online using 'AES256' encrypt;
+
+Tablespace USERS altered.
+
+Elapsed: 00:00:05.886
+```
+<Aside type="caution">
+オンライン変換ではRedoが生成されますので負荷/ログ量に注意する必要があります。
+</Aside>
+
+## 2-4. 暗号化後：データファイルの中身を確認
+
+暗号化が完了したら、再度同じ`strings`コマンドでデータファイルの中身を確認します。
+
+```sql title="[PDB] SYSユーザー"
+SQL> !strings /opt/oracle/oradata/FREE/FREEPDB1/users01.dbf | head -n 20
+}|{z
+W51YFREE
+USERS
+we      o
+Mi+#-
+=2WiTAZ
+w4Vd
+_35z
+D@LH
+ gaw2_1
+y6"x
+b})K@
+`2/Qz
+\dl80
+Q[\n
+E;+^
+&/b>
+VJ|l_
+?"@b0
+{{(D7
+```
+
+このように、データファイルが暗号化され、先程の内容が解読できない形式に変わったことを確認できます。  
+また、アプリケーション視点（SQL）では問題なくデータが参照できることを確認します。
+
+```sql title="[PDB] SYSユーザー"
+SQL> select * from hr.jobs;
+
+JOB_ID        JOB_TITLE                             MIN_SALARY    MAX_SALARY
+_____________ __________________________________ _____________ _____________
+AD_PRES       President                                  20080         40000
+AD_VP         Administration Vice President              15000         30000
+AD_ASST       Administration Assistant                    3000          6000
+FI_MGR        Finance Manager                             8200         16000
+FI_ACCOUNT    Accountant                                  4200          9000
+...
+19 rows selected.
+
+Elapsed: 00:00:00.015
+```
+
+## 2-5. 暗号化された表領域をオンラインで復号する
+
+オンライン暗号化と同様、オンライン復号も行うことができます。
+
+```sql title="[PDB] SYSユーザー"
+-- USERS表領域の復号
+SQL> alter tablespace users encryption online decrypt;
+
+Tablespace USERS altered.
+
+Elapsed: 00:00:06.064
+```
+
+復号後、再び `strings` で文字列が読める形式に戻っていることを確認できます。
+
+```sql title="[PDB] SYSユーザー"
+SQL> !strings /opt/oracle/oradata/FREE/FREEPDB1/users01.dbf | head -n 20
+}|{z
+W51YFREE
+USERS
+AAAAAAAA
+Africa,
+Oceania,
+Asia,
+Americas,
+Europe
+AAAAAAAA
+AAAAAAAA
+Belgium
+        Argentina
+Nigeria
+Malaysia
+Denmark
+Israel
+Kuwait
+Mexico
+Netherlands
+```
+オンライン暗号化/復号では、内部的にオンラインデータファイル移動に似た挙動で処理が進みます。処理中は「元ファイル」＋「変換後の新ファイル」へ二重に書き込みが発生し、完了後に新ファイルへ切り替わります。
+
+そのため、オンライン暗号化または復号処理を実行中にデータファイルを確認すると、処理中に `*_new` のようなファイルを確認することができます。
+
+```bash
+[oracle@db-tut FREEPDB1]$ ls -l
+total 999816
+-rw-r-----. 1 oracle oinstall 461381632 Feb  9 04:47 sysaux01.dbf
+-rw-r-----. 1 oracle oinstall 304095232 Feb  9 04:47 system01.dbf
+-rw-r-----. 1 oracle oinstall  20979712 Feb  9 04:28 temp01.dbf
+-rw-r-----. 1 oracle oinstall 104865792 Feb  9 04:47 undotbs01.dbf
+-rw-r-----. 1 oracle oinstall  75505664 Feb  9 04:48 users01.dbf
+-rw-r-----. 1 oracle oinstall  75505664 Feb  9 04:49 users01.dbf_new
+```
+
+以上の結果では `users01.dbf_new` という同じサイズの新しいデータファイルが作成されていることが分かります。 
+
+このようにオンライン処理では元のデータファイルと同じサイズの新しいファイルが作成されます。そのため、オンライン変換には補助領域（auxiliary space）が必要です。対象データファイルと同程度の空き容量が必要になるケースがあるため、事前に空き容量を確認してから実行するようにしてください。
+
+以上で、透過的データ暗号化（TDE）についてのチュートリアルは終了です。
+
+なお、TDEを有効化後は、作成したウォレットや暗号キーは削除しないことを推奨します。表領域を暗号化していないからといって削除してしまうと、予期せぬ不具合を起こす可能性がありますのでご注意ください。

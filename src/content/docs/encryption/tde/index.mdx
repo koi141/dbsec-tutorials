@@ -1,0 +1,54 @@
+---
+title: Transparent Data Encryption (TDE) 概要
+description: TDE（Transparent Data Encryption）の概要と、このサイトで扱う手順の流れを説明します。
+sidebar:
+  label: 概要
+  order: 0
+---
+import { Steps } from '@astrojs/starlight/components';
+
+このページでは、Oracle Database の TDE（Transparent Data Encryption）について、概要とチュートリアル内で実施する手順の流れを説明します。
+TDE は端的に言うと、Data at Rest（ディスク上の保存データ）を暗号化する機能です。
+列または表領域レベルを暗号化を行い、暗号化されたデータは正しい権限でアクセスするアプリケーションに対して透過的に復号されます。
+
+DBMSが暗号処理を行いますので、それより下のレイヤである「OS上のデータファイルやバックアップ媒体が盗難・流出した」ような場面でのリスク低減を狙います。
+
+参考ブログ： https://blogs.oracle.com/oracle4engineer/post/database-security-oracle-tde-introduction-jp
+
+
+## TDEの手順構成
+
+このサイトでは、主に表領域暗号化を題材に、次の流れでTDEを体験します。
+
+<Steps>
+
+1. [`TDEの事前準備`](./tutorial/1-setup)
+  
+    TDEにて暗号化を行う前に、`WALLET_ROOT`/`TDE_CONFIGURATION` などのパラメータ設定と、Keystore（ウォレット）の作成、TDEマスター暗号鍵の作成を行います。
+
+2. [`表領域の暗号化を行う`](./tutorial/2-encryption)
+
+    表領域をオンラインで暗号化し、データファイルが暗号化されることを確認します（同様にオンライン復号も実施します）。
+
+</Steps>
+
+## その他ページ
+
+- [キーストアを自動でオープンするようにする](./wallet-auto-open.html)
+
+鍵の保管場所であるKeystoreはデータベースの起動時のたびに、逐一オープンする必要があります。
+そこで、この手順では自動ログイン・キーストアを作成し、再起動後に自動でOPENされることを確認します。
+
+- [TDEに関連する初期化パラメータ](./initialization-parameters)
+
+TDEで主に使う初期化パラメータと、関連パラメータを確認します。
+
+## 参考リンク
+
+### 26ai
+- [Oracle AI Database透過的データ暗号化ガイド - 26ai](https://docs.oracle.com/cd/G47991_01/dbtde/index.html)
+- [SQL言語リファレンス ADMINISTER KEY MANAGEMENT - 26ai](https://docs.oracle.com/cd/G47991_01/sqlrf/ADMINISTER-KEY-MANAGEMENT.html)
+
+
+### 19c
+- [SQL言語リファレンス ADMINISTER KEY MANAGEMENT - 19c](https://docs.oracle.com/cd/F19136_01/sqlrf/ADMINISTER-KEY-MANAGEMENT.html)

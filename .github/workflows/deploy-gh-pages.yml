@@ -1,10 +1,13 @@
+# ref: https://docs.astro.build/en/guides/deploy/github/
 name: Deploy to GitHub Pages
 
 on:
   push:
+    branches: [ main ]
   workflow_dispatch:
 
 permissions:
+  contents: read
   pages: write
   id-token: write
 
@@ -12,16 +15,22 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-     - uses: actions/checkout@v4
-     - uses: actions/setup-python@v5
-     - name: Build
-       run: |
-         pip install -r requirements.txt
-         make html
-     - name: Upload artifact
-       uses: actions/upload-pages-artifact@v3
-       with:
-         path: build/html
-     - name: Deploy to GitHub Pages
-       id: deployment
-       uses: actions/deploy-pages@v4
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install, build, and upload your site
+        uses: withastro/action@v5
+        # with:
+        #   node-version: 22
+        #   package-manager: npm@latest
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

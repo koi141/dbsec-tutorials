@@ -1,0 +1,22 @@
+@media (min-width: 50rem) {
+  html[data-has-hero] .hero {
+    grid-template-columns: 9fr 3fr !important;
+  }
+}
+.content-panel:where(.astro-7nkwcw3z) {
+  padding: 2.5rem;
+}
+
+.hero {
+  padding-block: 1rem;
+}
+
+.sl-markdown-content h1 {
+  font-size: 2.1rem;
+}
+.sl-markdown-content h2 {
+  font-size: 1.8rem;
+}
+.sl-markdown-content h3 {
+  font-size: 1.5rem;
+}

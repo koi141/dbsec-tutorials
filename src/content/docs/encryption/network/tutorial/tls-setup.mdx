@@ -1,0 +1,513 @@
+---
+title: TLS接続の構成
+description: Oracle Database で TCPS (TLS) 接続を構成する手順
+sidebar:
+  order: 2
+---
+import { Aside, LinkButton } from '@astrojs/starlight/components';
+
+Oracle Databaseへの接続をSSL/TLS(TCPS)に切り替え、通信を暗号化するための設定を行います。  
+本手順では学習用として自己署名証明書を用いますが、本番ではCA署名証明書の利用等もご検討ください。
+
+## 前提
+- Oracle Database 環境が稼働していること
+  - 本手順では環境として 26ai FREE を使用しています
+
+## 1. サーバー側：ウォレット＆証明書の作成
+
+### 1-1. 作業ディレクトリ作成
+
+ウォレットおよび証明書を配置するための作業ディレクトリを作成します。  
+ここでは、`/home/oracle/wallet/tls` 配下で作業を行っていきます。
+
+```
+# DBサーバー
+mkdir -p /home/oracle/wallet/tls
+cd /home/oracle/wallet/tls
+```
+
+ウォレットおよび証明書の作成には `orapki` ユーティリティを使用します。まずはDBサーバーにて、このコマンドが使用できるかを確認しつつ、サブコマンドについても確認します。
+
+```shell
+[oracle@db-tut tls]$ orapki help
+Oracle PKI Tool Release 23.0.0.0.0 - Production
+Version 23.0.0.0.0
+Copyright (c) 2004, 2026, Oracle and/or its affiliates. All rights reserved.
+
+orapki [crl|wallet|cert|secretstore|help] <-nologo> <-jsafe> <-use_jce> <-use_jce_only> <-fips140_mode [FIPS_140_2|FIPS_140_3]>
+Syntax :
+[-option [value]]     : mandatory, for example [-wallet [wallet]]
+[-option <value>]     : optional, but when option is used its value is mandatory.
+<option>              : optional, for example <-summary>, <-complete>
+[option1] | [option2] : option1 'or' option2
+```
+
+なお、以降はウォレットの配置場所を `$WALLET_LOCATION` 変数で扱います。
+
+なお、ここから先は ウォレットの配置場所を `$WALLET_LOCATION` 変数で扱っていきます。
+
+```
+export WALLET_LOCATION=/home/oracle/wallet/tls
+```
+
+### 1-2. サーバ用ウォレットを作成
+
+サーバー証明書を格納するためのウォレットを作成します。ウォレットを操作するための `<password>` を指定することにご注意ください。
+
+```
+orapki wallet create -wallet $WALLET_LOCATION -pwd <password> -auto_login
+```
+
+`-auto_login` を指定することで、自動ログイン用の `cwallet.sso` が生成されます。また、代わりに `-auto_login_local` を指定すると作成ホスト限定の自動ログインになり、他ホストへコピーして使えないようになります。配布する場合はご注意ください。
+
+以上のコマンドにて作成されたファイルを確認します。
+
+- `ewallet.p12` : パスワード付きウォレット（編集・追加時に使用）
+- `cwallet.sso` : 自動ログイン用ウォレット（利用時のパスワード入力を省略）
+
+```shell
+$ ls -l $WALLET_LOCATION
+total 8
+-rw-------. 1 oracle oinstall 270 Feb 13 07:18 cwallet.sso
+-rw-------. 1 oracle oinstall   0 Feb 13 07:18 cwallet.sso.lck
+-rw-------. 1 oracle oinstall 225 Feb 13 07:18 ewallet.p12
+-rw-------. 1 oracle oinstall   0 Feb 13 07:18 ewallet.p12.lck
+```
+
+### 1-3. 自己署名証明書を作成してウォレットへ追加
+
+ここではサーバ証明書を自己署名で作成し、ウォレットに登録します。
+
+```
+orapki wallet add \
+  -wallet $WALLET_LOCATION \
+  -pwd <password> \
+  -dn "CN=`hostname`" \
+  -keysize 2048 \
+  -self_signed \
+  -validity 3650
+```
+
+作成・登録した証明書の情報は以下のコマンドで確認を行うことができます。
+
+```
+orapki wallet display \
+  -wallet $WALLET_LOCATION \
+  -details
+```
+
+```shell
+$ orapki wallet display -wallet $WALLET_LOCATION -pwd <password> -details
+Oracle PKI Tool Release 23.0.0.0.0 - Production
+Version 23.0.0.0.0
+Copyright (c) 2004, 2026, Oracle and/or its affiliates. All rights reserved.
+
+==================
+User Certificates:
+==================
+--------------------
+User Certificate [1]
+--------------------
+Subject:        CN=db-tut
+=====================
+Trusted Certificates:
+=====================
+-----------------------
+Trusted Certificate [1]
+-----------------------
+Subject:        CN=db-tut
+```
+
+クライアントに配布するため、作成した証明書をエクスポートします。実行すると `cert_<hostname>.crt` で証明書ファイルが出力されます。
+
+```
+orapki wallet export \
+  -wallet $WALLET_LOCATION \
+  -dn "CN=`hostname`" \
+  -cert $WALLET_LOCATION/cert_`hostname`.crt
+```
+```shell
+$ orapki wallet export \
+  -wallet $WALLET_LOCATION \
+  -dn "CN=`hostname`" \
+  -cert $WALLET_LOCATION/cert_`hostname`.crt
+...
+Operation is successfully completed.
+
+$ cat cert_db-tut.crt
+-----BEGIN CERTIFICATE-----
+MIICpjCCAY4CEQDDNwYpy1BrBtcBgcx8wv3RMA0GCSqGSIb3DQEBCwUAMBExDzAN
+BgNVBAMTBmRiLXR1dDAeFw0yNjAyMTMwNzI3MzNaFw0zNjAyMTEwNzI3MzNaMBEx
+DzANBgNVBAMTBmRiLXR1dDCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEB
+AI3Rdvq9NLvE8maWci5L4VKSRQ46VReQbh1EdJ+awBRsXTmPIQATeudk/w5uz4L/
+UEi79ZbGrYKhhWCn/KZrDprBdk10PmMRQnOn7UMYhPTJ3lqAj0XkLt0rMQNrsXSv
+vCyMAmUgfPbH8aLKU0fybIXpIR2uRuMPPKFcSX3RZ4bDMXmztmPDXaZ7yyI3qpSL
+O3VFFtvrwv7rZCkZKPePBsFqzd24HVZH7XQ7L5Jai1aFCuUJEojn2M0fIR6RlukL
+T4iWESDjfsTu/c84GgfHvnh9pd5Wv5ENlig4u8BOyoQ6PAVGieazjx2heaqLCnif
+7QJaE1jHbXyxTg9Nmlly44ECAwEAATANBgkqhkiG9w0BAQsFAAOCAQEALuJ7ggGW
+oCyi6TOVwaVx+WSFB8+gehFHXJc0fRf4kri2SP6NIWQ7OuvBikgR/y+7FFDsJFl+
+i8kW96yZRcWyeIv2fgnVPcntRmMxFxFOnp8YXqPSclbKWr/Re/d9AXBnyyhVAWMH
+gpA8d3XkBCn8Fj8f7VpULLM9Vj/dDToyvFBi+R+advMePnZNBO+eIXWbxh9g3DZ+
+5h62LFbSnACPn2sAYHnQhtI33SnXbILCKjQuJhNM0dGus57o4GSLurldcWw+Qg+L
+0BYGlSLxYJri+AQFrcu8CDhfB1ZNmxHEOBbkMLcY8IgL7aLoYQHDS/y5kFzddOO3
+gClVagVEEEa4KQ==
+-----END CERTIFICATE-----
+```
+
+## 2. クライアント用ウォレットを作成し、証明書を登録する
+
+出力した自己署名のサーバ証明書を、信頼された証明書として登録した「クライアント用ウォレット」を用意します。  
+実行ホストはDBサーバーでなくても構いませんが、`orapki`コマンドを引き続き使用するため、ここでは先程と同様DBサーバーで実行していきます。
+
+### 2-1. 作業ディレクトリ作成
+まずは作業のためのディレクトリを作成します。パスは `$WALLET_LOCATION/client_wallet` とします。
+
+```
+mkdir -p "$WALLET_LOCATION/client_wallet"
+cd "$WALLET_LOCATION/client_wallet"
+```
+
+### 2-2. クライアント用ウォレットを作成
+
+サーバー用ウォレットの作成時と同様にウォレットを作成します。
+```
+orapki wallet create -wallet $WALLET_LOCATION/client_wallet -pwd <clientPassword> -auto_login
+```
+
+作成されたファイルを確認します。
+```shell
+[oracle@db-tut client_wallet]$ ls -l
+total 8
+-rw-------. 1 oracle oinstall 270 Feb 13 09:37 cwallet.sso
+-rw-------. 1 oracle oinstall   0 Feb 13 09:37 cwallet.sso.lck
+-rw-------. 1 oracle oinstall 225 Feb 13 09:37 ewallet.p12
+-rw-------. 1 oracle oinstall   0 Feb 13 09:37 ewallet.p12.lck
+```
+
+### 2-3. サーバー証明書を追加
+先ほどエクスポートしたサーバー証明書をクライアント用ウォレットに追加します。`-cert` 部分はお手元のファイル名に置き換えてください。
+
+```
+orapki wallet add \
+  -wallet $WALLET_LOCATION/client_wallet \
+  -trusted_cert \
+  -cert $WALLET_LOCATION/cert_db-tut.crt \
+  -pwd <clientPassword>
+```
+
+<Aside type="note">
+自動ログイン（`cwallet.sso`）を作っていても、証明書の追加などの編集はパスワード付きウォレット（`ewallet.p12`）を開いて行うため、`-pwd`が必要となります。
+<details>
+  <summary>実行例</summary>
+  ```shell
+  [oracle@db-tut client_wallet]$ orapki wallet add \
+    -wallet $WALLET_LOCATION/client_wallet \
+    -trusted_cert \
+    -cert $WALLET_LOCATION/cert_db-tut.crt
+  Oracle PKI Tool Release 23.0.0.0.0 - Production
+  Version 23.0.0.0.0
+  Copyright (c) 2004, 2026, Oracle and/or its affiliates. All rights reserved.
+
+  Cannot modify auto-login (sso) wallet
+  Enter wallet password:  
+  ```
+</details>
+</Aside>
+
+実行が成功したら、以下のコマンドを参考に、正しく証明書が登録されたかを確認します。
+
+```shell
+[oracle@db-tut client_wallet]$ orapki wallet display -wallet $WALLET_LOCATION/client_wallet
+Oracle PKI Tool Release 23.0.0.0.0 - Production
+Version 23.0.0.0.0
+Copyright (c) 2004, 2026, Oracle and/or its affiliates. All rights reserved.
+
+Requested Certificates:
+User Certificates:
+Trusted Certificates:
+Subject:        CN=db-tut
+```
+
+このウォレットをフォルダ（`client_wallet`）ごと、クライアントに配置するため、上記をDBサーバーで実行していた場合、クライアントホストへ移動させておきます。
+
+
+## 3. サーバ側：DBネットワーク設定
+
+作成したサーバー証明書を参照するように、`sqlnet.ora` に以下の２行を追記します。  
+ファイルの場所は環境により異なりますが、一般に `$ORACLE_HOME/network/admin/sqlnet.ora` に配置されます。
+
+```diff title="sqlnet.ora"
+# sqlnet.ora Network Configuration File: /opt/oracle/product/26ai/dbhomeFree/network/admin/sqlnet.ora
+# Generated by Oracle configuration tools.
+
+NAMES.DIRECTORY_PATH= (TNSNAMES, EZCONNECT)
+
++ SSL_CLIENT_AUTHENTICATION=FALSE
++ WALLET_LOCATION=(SOURCE=(METHOD=FILE)(METHOD_DATA=(DIRECTORY=<$WALLET_LOCATIONのパス>)))
+```
+設定した項目については以下の通りです。
+- `SSL_CLIENT_AUTHENTICATION=FALSE`：今回の手順は「サーバ証明書認証のみの片方向TLSで、クライアント証明書認証はしない想定です。
+- `WALLET_LOCATION`：TLS 用ウォレットの場所を指定。
+
+この sqlnet.ora の主要パラメータは Oracle Netのリファレンスにまとまっています。
+<LinkButton
+  href="https://docs.oracle.com/cd/G47991_01/netrf/parameters-for-the-sqlnet.ora.html"
+  variant="minimal"
+  icon="external"
+  iconPlacement="start"
+>
+  Release 26 - 5 sqlnet.oraファイルのパラメータ | Database Net Servicesリファレンス
+</LinkButton>
+
+<Aside type="tip">
+  Grid Infrastructure（grid ユーザーで listener が動作）環境では、listener がウォレットを参照できるように ディレクトリ権限（所有者/グループ/パーミッション）を調整してください。
+</Aside>
+
+## 4. サーバ側：Listenerの設定
+
+`listener.ora` を編集して SSL/TLS をLISTENするための設定を追加します。ファイルは先程の `sqlnet.ora` と同様、`$ORACLE_HOME/network/admin` に配置されています。
+
+既存のTCP (1521)に加え、TCPS用のエンドポイント（例：1522）を追加します。以下は追記の例です。
+
+```diff title="listener.ora"
+# listener.ora Network Configuration File: /opt/oracle/product/26ai/dbhomeFree/network/admin/listener.ora
+# Generated by Oracle configuration tools.
+
+DEFAULT_SERVICE_LISTENER = FREE
+
+LISTENER =
+  (DESCRIPTION_LIST =
+    (DESCRIPTION =
+      (ADDRESS = (PROTOCOL = TCP)(HOST = db-tut.sub01150410170.koivcntest.oraclevcn.com)(PORT = 1521))
++      (ADDRESS = (PROTOCOL = TCPS)(HOST = db-tut.sub01150410170.koivcntest.oraclevcn.com)(PORT = 1522))
+      (ADDRESS = (PROTOCOL = IPC)(KEY = EXTPROC1521))
+    )
+  )
+
++ SSL_CLIENT_AUTHENTICATION=FALSE
++ WALLET_LOCATION=(SOURCE=(METHOD=FILE)(METHOD_DATA=(DIRECTORY=/home/oracle/wallet/tls)))
+```
+
+この sqlnet.ora の主要パラメータは Oracle Netのリファレンスにまとまっています。
+<LinkButton
+  href="https://docs.oracle.com/cd/G47991_01/netrf/oracle-net-listener-parameters-in-listener-ora.html"
+  variant="minimal"
+  icon="external"
+  iconPlacement="start"
+>
+  Release 26 - 8 listener.oraファイル内のOracle Net Listenerパラメータ | Database Net Servicesリファレンス
+</LinkButton>
+
+
+設定が完了したら、リスナーを再起動します。
+
+```
+lsnrctl stop
+lsnrctl start
+```
+
+その後、リスナーがTCPSでLISTENしていることを確認します。
+
+```shell
+$ lsnrctl status
+
+LSNRCTL for Linux: Version 23.26.1.0.0 - Production on 15-FEB-2026 12:56:56
+
+Copyright (c) 1991, 2026, Oracle.  All rights reserved.
+
+Connecting to (DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=db-tut.sub01150410170.koivcntest.oraclevcn.com)(PORT=1521)))
+STATUS of the LISTENER
+------------------------
+Alias                     LISTENER
+Version                   TNSLSNR for Linux: Version 23.26.1.0.0 - Production
+Start Date                15-FEB-2026 09:27:33
+Uptime                    0 days 3 hr. 29 min. 22 sec
+Trace Level               off
+Security                  ON: Local OS Authentication
+SNMP                      OFF
+Default Service           FREE
+Listener Parameter File   /opt/oracle/product/26ai/dbhomeFree/network/admin/listener.ora
+Listener Log File         /opt/oracle/diag/tnslsnr/db-tut/listener/alert/log.xml
+Listening Endpoints Summary...
+  (DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=db-tut.sub01150410170.koivcntest.oraclevcn.com)(PORT=1521)))
+  (DESCRIPTION=(ADDRESS=(PROTOCOL=tcps)(HOST=db-tut.sub01150410170.koivcntest.oraclevcn.com)(PORT=1522)))
+  (DESCRIPTION=(ADDRESS=(PROTOCOL=ipc)(KEY=EXTPROC1521)))
+Services Summary...
+Service "4a017ab47ba8e1ede0631800000a54a4" has 1 instance(s).
+  Instance "FREE", status READY, has 1 handler(s) for this service...
+Service "FREE" has 1 instance(s).
+  Instance "FREE", status READY, has 1 handler(s) for this service...
+Service "FREEXDB" has 1 instance(s).
+  Instance "FREE", status READY, has 1 handler(s) for this service...
+Service "freepdb1" has 1 instance(s).
+  Instance "FREE", status READY, has 1 handler(s) for this service...
+The command completed successfully
+```
+
+## 5. 動作確認
+opensslコマンドを使用することで、サーバ側でサーバ証明書が提示されていることを確認できます。
+
+```shell
+$ openssl s_client -connect db-tut:1522
+Connecting to 10.0.0.209
+CONNECTED(00000003)
+Can't use SSL_get_servername
+depth=0 CN=db-tut
+verify error:num=18:self-signed certificate
+verify return:1
+depth=0 CN=db-tut
+verify return:1
+---
+Certificate chain
+ 0 s:CN=db-tut
+   i:CN=db-tut
+   a:PKEY: RSA, 2048 (bit); sigalg: sha256WithRSAEncryption
+   v:NotBefore: Feb 13 07:27:33 2026 GMT; NotAfter: Feb 11 07:27:33 2036 GMT
+---
+Server certificate
+-----BEGIN CERTIFICATE-----
+MIICpjCCAY4CEQDDNwYpy1BrBtcBgcx8wv3RMA0GCSqGSIb3DQEBCwUAMBExDzAN
+BgNVBAMTBmRiLXR1dDAeFw0yNjAyMTMwNzI3MzNaFw0zNjAyMTEwNzI3MzNaMBEx
+DzANBgNVBAMTBmRiLXR1dDCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEB
+AI3Rdvq9NLvE8maWci5L4VKSRQ46VReQbh1EdJ+awBRsXTmPIQATeudk/w5uz4L/
+UEi79ZbGrYKhhWCn/KZrDprBdk10PmMRQnOn7UMYhPTJ3lqAj0XkLt0rMQNrsXSv
+vCyMAmUgfPbH8aLKU0fybIXpIR2uRuMPPKFcSX3RZ4bDMXmztmPDXaZ7yyI3qpSL
+...
+```
+
+## 6. ネットワーク設定
+使用している仮想環境に併せて、firewall設定を確認・許可の設定を行います。OCIのコンピュート(Oracle Linux)では firewalld が動作しているため、1522/tcp を許可する必要があります。
+```
+sudo firewall-cmd --zone=public --add-port=1522/tcp --permanent
+sudo firewall-cmd --reload
+```
+
+設定の確認も行います
+```shell
+$ sudo firewall-cmd --list-all
+public (active)
+  target: default
+  icmp-block-inversion: no
+  interfaces: enp0s5
+  sources:
+  services: dhcpv6-client ssh
+  ports: 1521/tcp 1522/tcp
+  protocols:
+  forward: yes
+  masquerade: no
+  forward-ports:
+  source-ports:
+  icmp-blocks:
+  rich rules:
+```
+また、OCI環境などクラウド環境を利用している場合、セキュリティリストなどの仮想ファイアーウォールの設定も忘れずに確認しておきます。
+
+
+## 7. クライアント側の設定
+
+ここからは、クライアントの方で設定を行うため、クライアント側のファイルを作成、編集をおこなっていきます。
+
+作業ディレクトリを作成します。ここでは `/home/ubuntu/wallet/tls` を作業ディレクトリとしています。
+```
+mkdir -p wallet/tls
+```
+
+サーバーにて生成したクライアント用ウォレット（`client_wallet`）をインポートし、ここではディレクトリ全体が次の構成になるように作成、配置します。
+
+```
+wallet/
+└── tls
+    ├── client_wallet   # インポート
+    │   ├── cwallet.sso
+    │   ├── cwallet.sso.lck
+    │   ├── ewallet.p12
+    │   └── ewallet.p12.lck
+    ├── sqlnet.ora      # 作成
+    └── tnsnames.ora    # 作成
+```
+
+
+`sqlnet.ora`を編集し、以下を参考に編集します。
+
+```shell
+$ vi wallet/tls/sqlnet.ora
+
+WALLET_LOCATION =
+  (SOURCE =
+    (METHOD = FILE)
+    (METHOD_DATA =
+      (DIRECTORY = /home/ubuntu/wallet/tls)
+    )
+  )
+
+SSL_SERVER_DN_MATCH = YES
+SSL_CLIENT_AUTHENTICATION = FALSE
+```
+
+
+`tnsnames.ora`を編集し、以下を参考に編集します。
+```shell
+$ vi wallet/tls/tnsnames.ora
+
+oradb26ai_freepdb1_tcps =
+  (DESCRIPTION=
+    (ADDRESS=(PROTOCOL=tcps)(HOST=<DB hostname>)(PORT=1522))
+    (CONNECT_DATA=(SERVICE_NAME=freepdb1))
+    (SECURITY=
+      (WALLET_LOCATION=/home/ubuntu/wallet/tls/client_wallet)
+      (SSL_SERVER_DN_MATCH=NO) ## default でNOになっているが、IPアドレスでアクセスするなら、YESだとORA-17965エラーがでる
+    )
+  )
+```
+`SSL_SERVER_DN_MATCH=YES` の場合、接続先ホスト名と証明書の整合性（CN/SAN）が重要になります。ここではDBホストにIPアドレスを指定するため、`NO`としています。（次の  参照）。
+
+<LinkButton
+  href="https://docs.oracle.com/en/error-help/db/ora-17965/?r=26ai"
+  variant="minimal"
+  icon="external"
+  iconPlacement="start"
+>
+  ORA-17965 | Database Error Messages
+</LinkButton>
+
+
+## 8. 接続テストと確認SQL
+
+適当なユーザーを使用してSQLclなどでDBに接続し、無事成功することを確認します。
+
+```shell
+$ sql hr/<password>@oradb26ai_freepdb1_tcps
+
+SQLcl: Release 25.3 Production on Sun Feb 15 21:57:55 2026
+
+Copyright (c) 1982, 2026, Oracle.  All rights reserved.
+
+Connected to:
+Oracle AI Database 26ai Free Release 23.26.1.0.0 - Develop, Learn, and Run for Free
+Version 23.26.1.0.0
+
+SQL> sho user
+USER is "HR"
+```
+
+接続後、TCPS で接続できていることを確認します。
+
+```shell
+SQL> select sys_context('USERENV','NETWORK_PROTOCOL') as network_protocol from dual;
+
+NETWORK_PROTOCOL
+________________
+tcps
+
+SQL> select sys_context('USERENV','TLS_VERSION') as tls_version from dual;
+
+TLS_VERSION
+___________
+TLS 1.2
+
+SQL> select sys_context('USERENV','TLS_CIPHERSUITE') as tls_ciphersuite from dual;
+
+TLS_CIPHERSUITE
+______________________________________
+TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+```
