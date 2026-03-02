@@ -8,7 +8,8 @@ export default defineConfig({
   vite: {
     logLevel: 'error',
   },
-  site: 'https://koi141.github.io/dbsec-tutorials',
+  site: 'https://koi141.github.io',
+  base: '/dbsec-tutorials',
   integrations: [
     starlight({
       title: 'OraDBSec',
