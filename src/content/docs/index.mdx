@@ -38,7 +38,7 @@ import { LinkCard, LinkButton, Card, CardGrid, Icon } from '@astrojs/starlight/c
     クエリ結果に対して動的にマスキングを行い、機微情報の表示を抑止します。
     データ自体を書き換えず、参照時の見せ方だけを制御できる点が特徴です。
 
-    [> 開く](./access-control/data-redaction/)
+    [> 開く](./masking/data-redaction/)
   </Card>
 </CardGrid>
 
@@ -87,6 +87,13 @@ import { LinkCard, LinkButton, Card, CardGrid, Icon } from '@astrojs/starlight/c
     長期的に固定の秘密情報を配布・保持する運用を減らせます。
 
     [> 開く](./authentication/oci-iam-dbtoken/)
+  </Card>
+
+  <Card title="MS Entra ID 認証" icon="random">
+    Microsoft Entra ID のユーザーを使用してDBにログインする方式です。
+    Entra ID 側のユーザーやロールと連携し、一元化されたユーザーおよび認可管理を行うことができます。
+
+    [> 開く](./authentication/entraid-dbtoken/)
   </Card>
 
   <Card title="多要素認証（MFA）" icon="phone">

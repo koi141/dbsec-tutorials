@@ -27,6 +27,7 @@ export default defineConfig({
           items: [
             { label: 'OCI IAM DBパスワード', autogenerate: { directory: 'authentication/oci-iam-dbcredential' } },
             { label: 'OCI IAM DBトークン', autogenerate: { directory: 'authentication/oci-iam-dbtoken' } },
+            { label: 'MS Entra ID 認証', autogenerate: { directory: 'authentication/entraid-dbtoken' } },
             { label: 'ローカルユーザーMFA', autogenerate: { directory: 'authentication/password-mfa' } },
           ],
         },
