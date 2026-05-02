@@ -1,0 +1,79 @@
+---
+title: Data Redaction
+description: Oracle Data Redaction の概要と、このサイトで扱うチュートリアルの案内です。
+sidebar:
+  label: 概要
+  order: 0
+---
+import { Steps, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+## Data Redaction とは
+
+Data Redaction（データ・リダクション）は、クエリ結果として返される列の値を動的に隠す（マスキングする）機能です。
+DB 内部のデータ自体は変更されず、アプリケーションに返すタイミングでのみ値が置き換えられます（Data in Use の保護）。
+
+`DBMS_REDACT` パッケージでポリシーを管理し、**「誰が・どのオブジェクトの・どの列を照会したとき」** にマスキングを適用するかを条件式（`expression`）で制御します。
+
+## リダクション・タイプ
+
+| タイプ | 定数 | 動作 |
+|---|---|---|
+| **完全リダクション** | `DBMS_REDACT.FULL` | 数値は `0`、文字列は空文字に置き換え |
+| **部分リダクション** | `DBMS_REDACT.PARTIAL` | 一部の文字だけをマスク（例：クレジットカード番号の末尾4桁のみ表示） |
+| **ランダム** | `DBMS_REDACT.RANDOM` | ランダムな値を返す（毎回変わる） |
+| **正規表現** | `DBMS_REDACT.REGEXP` | 正規表現パターンに一致した部分を置換 |
+| **リダクションなし** | `DBMS_REDACT.NONE` | 実際の値をそのまま返す（ポリシーの一時無効化などに使用） |
+
+## ポリシーの仕組み
+
+- **1オブジェクト（表/ビュー）につき 1 ポリシー**のみ作成できる
+- 1 つのポリシーに複数列を追加するには `DBMS_REDACT.ALTER_POLICY` を使う
+- `expression` パラメータで適用条件を指定（例：`SYS_CONTEXT('USERENV','SESSION_USER') = 'SALES_APP'`）
+- ポリシーの状態は `redaction_policies` / `redaction_columns` ビューで確認できる
+
+## 主要プロシージャ
+
+| プロシージャ | 用途 |
+|---|---|
+| `DBMS_REDACT.ADD_POLICY` | 新規ポリシーを作成（最初の列を定義） |
+| `DBMS_REDACT.ALTER_POLICY` | 既存ポリシーに列の追加・変更・有効/無効化 |
+| `DBMS_REDACT.DROP_POLICY` | ポリシーを削除 |
+
+## 注意：アクセス制御機能ではない
+
+Data Redaction はデータを「見えにくくする」機能であり、**アクセスを遮断する機能ではありません**。
+`WHERE` 句や副問い合わせを使った条件フィルタリングは元データに対して実行されるため、絞り込み件数などからデータを推測できる場合があります。
+機密データの保護には、VPD や Database Vault などのアクセス制御機能と組み合わせることが重要です。
+
+詳しくは「注意点」ページを参照してください。
+
+## このサイトで扱う内容
+
+HR スキーマの `EMPLOYEES` 表を題材に、`SALARY` / `COMMISSION_PCT` 列に対して完全リダクションを適用し、ユーザー別の見え方の違いを確認します。
+
+<Steps>
+
+1. [`Data Redactionの準備`](./tutorial/1-setup-redact)
+
+    比較用ユーザー（`SALES_APP`）への権限付与と、`DBMS_REDACT.ADD_POLICY` / `ALTER_POLICY` を使ったリダクションポリシーの作成を行います。
+
+2. [`Redactionを体験する`](./tutorial/2-redaction)
+
+    `HR` ユーザーと `SALES_APP` ユーザーでそれぞれ同じクエリを実行し、列の値がマスキングされることを確認します。最後にポリシーを削除して後片付けも行います。
+
+</Steps>
+
+## 補足ページ
+
+<CardGrid>
+  <LinkCard
+    title="注意点"
+    description="WHERE句・副問い合わせによるデータ推測のリスクなど、Data Redaction の限界と運用上の注意点を解説します。"
+    href="./note"
+  />
+</CardGrid>
+
+## 参考リンク
+
+- [DBMS_REDACTパッケージ - 26ai](https://docs.oracle.com/cd/G47991_01/arpls/DBMS_REDACT.html)
+- [Oracle Database セキュリティ・ガイド - データのリダクション - 26ai](https://docs.oracle.com/cd/G47991_01/dbseg/using-transparent-sensitive-data-protection.html)

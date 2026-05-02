@@ -5,50 +5,76 @@ sidebar:
   label: 概要
   order: 0
 ---
-import { Steps } from '@astrojs/starlight/components';
+import { Steps, CardGrid, LinkCard } from '@astrojs/starlight/components';
 
-このページでは、Oracle Database の TDE（Transparent Data Encryption）について、概要とチュートリアル内で実施する手順の流れを説明します。
-TDE は端的に言うと、Data at Rest（ディスク上の保存データ）を暗号化する機能です。
-列または表領域レベルを暗号化を行い、暗号化されたデータは正しい権限でアクセスするアプリケーションに対して透過的に復号されます。
+## TDEとは
 
-DBMSが暗号処理を行いますので、それより下のレイヤである「OS上のデータファイルやバックアップ媒体が盗難・流出した」ような場面でのリスク低減を狙います。
+TDE（Transparent Data Encryption）は、Data at Rest（ディスク上の保存データ）を暗号化する機能です。
+列または表領域レベルで暗号化を行い、暗号化されたデータは正しい権限でアクセスするアプリケーションに対して透過的に復号されます。
 
-参考ブログ： https://blogs.oracle.com/oracle4engineer/post/database-security-oracle-tde-introduction-jp
+DBMSが暗号処理を担うため、「OS上のデータファイルやバックアップ媒体が盗難・流出した」ような場面でのリスク低減を狙います。
 
+参考ブログ：https://blogs.oracle.com/oracle4engineer/post/database-security-oracle-tde-introduction-jp
 
-## TDEの手順構成
+### TDEの主要コンポーネント
 
-このサイトでは、主に表領域暗号化を題材に、次の流れでTDEを体験します。
+| コンポーネント | 説明 |
+|---|---|
+| **Keystore（キーストア）** | マスター暗号鍵を格納するファイル（`ewallet.p12`）または Oracle Key Vault。鍵の保管場所 |
+| **マスター暗号鍵（MEK）** | 表領域暗号鍵を暗号化するルートキー。CDB・PDB それぞれに作成が必要 |
+| **WALLET_ROOT** | Keystore を格納するディレクトリのルートパス（静的パラメータ、再起動が必要） |
+| **TDE_CONFIGURATION** | 使用する Keystore の種類（FILE / OKV など）を指定（動的パラメータ） |
+
+### 統一モードと分離モード
+
+CDB（コンテナデータベース）環境では、PDB の鍵管理方式として2つのモードがあります。
+
+- **統一モード（United Mode）**: CDB$ROOT と統一 PDB が共通の Keystore を使用。CDB$ROOT の `TDE_CONFIGURATION` を PDB が継承する
+- **分離モード（Isolated Mode）**: 19c からサポート。PDB が固有の Keystore を持ち、個別に管理できる
+
+このサイトのチュートリアルでは**統一モード**を使用します。
+
+## このサイトで扱う内容
+
+主に表領域暗号化を題材に、次の流れで TDE を体験します。
 
 <Steps>
 
 1. [`TDEの事前準備`](./tutorial/1-setup)
-  
-    TDEにて暗号化を行う前に、`WALLET_ROOT`/`TDE_CONFIGURATION` などのパラメータ設定と、Keystore（ウォレット）の作成、TDEマスター暗号鍵の作成を行います。
+
+    `WALLET_ROOT` / `TDE_CONFIGURATION` などのパラメータ設定と、Keystore の作成、TDE マスター暗号鍵の作成を行います（CDB・PDB それぞれに作成）。
 
 2. [`表領域の暗号化を行う`](./tutorial/2-encryption)
 
-    表領域をオンラインで暗号化し、データファイルが暗号化されることを確認します（同様にオンライン復号も実施します）。
+    USERS 表領域をオンラインで暗号化し、`strings` コマンドでデータファイルが暗号化されることを確認します。同様にオンライン復号も実施します。
 
 </Steps>
 
-## その他ページ
+## 補足ページ
 
-- [キーストアを自動でオープンするようにする](./wallet-auto-open.html)
-
-鍵の保管場所であるKeystoreはデータベースの起動時のたびに、逐一オープンする必要があります。
-そこで、この手順では自動ログイン・キーストアを作成し、再起動後に自動でOPENされることを確認します。
-
-- [TDEに関連する初期化パラメータ](./initialization-parameters)
-
-TDEで主に使う初期化パラメータと、関連パラメータを確認します。
+<CardGrid>
+  <LinkCard
+    title="キーストアの自動オープン"
+    description="自動ログイン・キーストア（AUTOLOGIN）を作成し、DB 再起動後に Keystore が自動で OPEN されることを確認します。"
+    href="./wallet-auto-open"
+  />
+  <LinkCard
+    title="TDEに関連する初期化パラメータ"
+    description="WALLET_ROOT・TDE_CONFIGURATION をはじめ、TDE に関連する初期化パラメータの詳細を確認します。"
+    href="./initialization-parameters"
+  />
+  <LinkCard
+    title="コマンド概要"
+    description="チュートリアルで使用するコマンドの簡易まとめです。"
+    href="./tutorial/cmd"
+  />
+</CardGrid>
 
 ## 参考リンク
 
 ### 26ai
-- [Oracle AI Database透過的データ暗号化ガイド - 26ai](https://docs.oracle.com/cd/G47991_01/dbtde/index.html)
+- [Oracle AI Database 透過的データ暗号化ガイド - 26ai](https://docs.oracle.com/cd/G47991_01/dbtde/index.html)
 - [SQL言語リファレンス ADMINISTER KEY MANAGEMENT - 26ai](https://docs.oracle.com/cd/G47991_01/sqlrf/ADMINISTER-KEY-MANAGEMENT.html)
-
 
 ### 19c
 - [SQL言語リファレンス ADMINISTER KEY MANAGEMENT - 19c](https://docs.oracle.com/cd/F19136_01/sqlrf/ADMINISTER-KEY-MANAGEMENT.html)

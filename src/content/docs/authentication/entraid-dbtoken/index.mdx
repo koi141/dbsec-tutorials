@@ -1,0 +1,119 @@
+---
+title: MS Entra ID トークン認証
+description: Microsoft Entra ID が発行するアクセストークンを使用して Oracle Database に接続する機能の概要と、チュートリアルの案内です。
+sidebar:
+  label: 概要
+  order: 0
+---
+import { Steps, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+## MS Entra ID トークン認証とは
+
+Microsoft Entra ID（旧 Azure Active Directory）が発行する OAuth 2.0 アクセストークンを使って Oracle Database に接続する機能です。
+
+従来のパスワード認証では、DB 側でユーザーのパスワードを管理する必要がありました。
+Entra ID と連携することで、**認証を外部の ID プロバイダに委ねる**ことができ、既存の Entra ID ユーザー管理・ロール管理をそのまま DB アクセス制御に活かせます。
+
+## 仕組みの概要
+
+```
+[ クライアント ]          [ Entra ID ]       [ Oracle Database ]
+       |                    　|                     |
+       |── 1. トークン取得 ───▶|                     |
+       |◀── アクセストークン ──|                     |
+       |                    　|                     |
+       |─────────── 2. 接続 (OAUTH + TLS) ─────────▶|
+       |                      |                     |
+       |                      |               3. トークン検証
+       |                      |         (IDENTITY_PROVIDER_CONFIG)
+       |                      |                     |
+       |                      |         4. ユーザー/ロールマッピング
+       |                      |          (AZURE_USER / AZURE_ROLE)
+       |                      |                     |
+```
+
+1. クライアントが Entra ID からアクセストークン（JWT）を取得する
+2. `tnsnames.ora` に `TOKEN_AUTH=OAUTH` を指定し、TCPS（TLS）で DB に接続する
+3. DB が `IDENTITY_PROVIDER_CONFIG` に設定されたテナント情報を元にトークンを検証する
+4. トークンの `upn` クレームまたはアプリロールに対応する DB ユーザーでセッションが確立される
+
+なお、この接続には **TLS（TCPS）が必須**です。
+
+## 2つの認証フロー
+
+このサイトでは、以下の2つのフローを扱います。
+
+| | 委任されたアクセス許可（認可コードフロー） | クライアント・クレデンシャルフロー |
+|---|---|---|
+| **ユーザーの関与** | あり（対話的ログイン） | なし（アプリ自身の権限） |
+| **用途** | ユーザーが直接 DB にアクセスする場面 | バッチ・デーモン・サーバー間連携 |
+| **Scope 指定** | `api://<App ID>/<scope名>` | `api://<App ID>/.default` |
+| **DBユーザーのマッピング** | `AZURE_USER=<upn>` | `AZURE_ROLE=<アプリロール名>` |
+| **トークンのクレーム** | `upn` が必要 | 不要 |
+
+## 主要な設定項目
+
+### DB パラメータ
+
+| パラメータ | 説明 |
+|---|---|
+| `IDENTITY_PROVIDER_TYPE` | `AZURE_AD` を指定 |
+| `IDENTITY_PROVIDER_CONFIG` | テナント ID・アプリケーション ID・App ID URI を JSON で設定 |
+
+### DB ユーザー／ロールの作成構文
+
+```sql
+-- Entra ID ユーザーにマッピング（認可コードフロー）
+CREATE USER <DB ユーザー> IDENTIFIED GLOBALLY AS 'AZURE_USER=<upn>';
+
+-- Entra ID アプリロールにマッピング（クライアントクレデンシャルフロー）
+CREATE USER <DB ユーザー> IDENTIFIED GLOBALLY AS 'AZURE_ROLE=<ロール名>';
+CREATE ROLE <DB ロール> IDENTIFIED GLOBALLY AS 'AZURE_ROLE=<ロール名>';
+```
+
+### tnsnames.ora の接続記述子
+
+```text
+<接続名> = (
+  DESCRIPTION=
+    (ADDRESS=(PROTOCOL=TCPS)(HOST=<ホスト>)(PORT=<ポート>))
+    (SECURITY=
+      (TOKEN_AUTH=OAUTH)
+      (TOKEN_LOCATION=<トークンファイルのパス>)
+      (WALLET_LOCATION=<クライアントウォレットのパス>))
+    (CONNECT_DATA=(SERVICE_NAME=<サービス名>)))
+```
+
+## チュートリアル
+
+<Steps>
+
+1. [`Entra ID の設定`](./tutorial/1-setup-entraid)
+
+    Oracle Database 用の API アプリケーションを Entra ID に登録し、スコープの公開・トークンバージョン（v2）・`upn` クレームの設定を行います。あわせて OAuth クライアントを作成し、API へのアクセス許可を設定します。
+
+2. [`Database の設定`](./tutorial/2-setup-database)
+
+    `IDENTITY_PROVIDER_TYPE` / `IDENTITY_PROVIDER_CONFIG` を設定し、Entra ID ユーザーに対応する DB ユーザーを作成します。
+
+3. [`接続を試す`](./tutorial/3-login-entraid)
+
+    Azure CLI または Postman でアクセストークンを取得し、SQLcl から TCPS 接続で DB にログインできることを確認します。接続コンテキスト（`AUTH_METHOD`・`AUTHENTICATED_IDENTITY` など）も検証します。
+
+</Steps>
+
+## 補足ページ
+
+<CardGrid>
+  <LinkCard
+    title="クライアントクレデンシャルによる接続"
+    description="ユーザーの対話的ログインを介さず、アプリケーション自身の権限でトークンを取得して DB に接続するフローを扱います。バッチ・サーバー間連携などの非対話型接続に対応します。"
+    href="./client-credential"
+  />
+</CardGrid>
+
+## 参考リンク
+
+- [Oracle AI Database新機能 - 26ai](https://docs.oracle.com/cd/G47991_01/nfcoa/authentication.html)
+- [アクセス トークン - Microsoft identity platform](https://learn.microsoft.com/ja-jp/entra/identity-platform/access-tokens)
+- [OAuth 2.0 クライアント資格情報フロー - Microsoft](https://learn.microsoft.com/ja-jp/entra/identity-platform/v2-oauth2-client-creds-grant-flow)

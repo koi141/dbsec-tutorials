@@ -1,0 +1,93 @@
+---
+title: ネットワーク暗号化
+description: Oracle Database のネットワーク暗号化機能（NNE / TLS）の概要と、各チュートリアルへの案内です。
+sidebar:
+  label: 概要
+  order: 0
+---
+import { Steps, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+Oracle Database には、クライアント〜DB間の通信を暗号化する仕組みとして、大きく次の2系統があります。
+
+- **ネイティブ・ネットワーク暗号化（NNE: Native Network Encryption）**
+- **TLS（TCPS）**
+
+このチュートリアルでは、それぞれのセットアップ手順を扱います。
+
+## なぜ通信の暗号化が必要か
+
+TDE（保存データの暗号化）を行っていても、クライアント〜DB間の通信が平文のままでは、ネットワーク上での盗聴（スニッフィング）によってデータが漏洩するリスクがあります。
+通信の暗号化（Data in Transit の保護）は、保存データの暗号化と合わせて実施することが重要です。
+
+## 2つの方式の比較
+
+| | NNE | TLS（TCPS） |
+|---|---|---|
+| **仕組み** | Oracle Net 独自の暗号化プロトコル | 標準の SSL/TLS プロトコル |
+| **設定の手軽さ** | `sqlnet.ora` の数行追記で有効化 | 証明書・ウォレットの作成が必要 |
+| **証明書** | 不要 | 必要（自己署名または CA 署名） |
+| **改ざん検出** | `CRYPTO_CHECKSUM` で追加設定 | TLS に組み込み済み |
+| **標準準拠** | Oracle 独自 | 業界標準 |
+| **クライアント対応** | Oracle Net クライアントのみ | 標準 TLS 対応クライアント |
+
+## ネイティブ・ネットワーク暗号化（NNE）
+
+NNE は Oracle Net の機能で、`sqlnet.ora` のパラメータを設定するだけで通信内容の暗号化と改ざん検出（整合性チェック）を有効化できます。
+証明書の管理が不要で導入が容易な点が特長です。
+
+### 主要パラメータ
+
+| パラメータ | 役割 |
+|---|---|
+| `SQLNET.ENCRYPTION_SERVER` | サーバ側の暗号化要求レベル（`REQUIRED` / `REQUESTED` / `REJECTED` / `ACCEPTED`） |
+| `SQLNET.ENCRYPTION_TYPES_SERVER` | 許可する暗号化アルゴリズム（例：`AES256`, `AES192`, `AES128`） |
+| `SQLNET.CRYPTO_CHECKSUM_SERVER` | 整合性チェックの要求レベル |
+| `SQLNET.CRYPTO_CHECKSUM_TYPES_SERVER` | 整合性チェックのアルゴリズム（例：`SHA512`） |
+
+## TLS（TCPS）
+
+TLS は業界標準の SSL/TLS プロトコルを使い、`TCPS` ポートでの接続を提供します。
+Oracle ウォレット（`orapki` で管理）にサーバ証明書を格納し、`listener.ora` に TCPS エンドポイントを追加することで有効化します。
+
+### 構成の流れ
+
+<Steps>
+
+1. **サーバー側ウォレットと証明書の作成**
+
+    `orapki` ユーティリティでウォレットを作成し、自己署名証明書（または CA 証明書）を登録します。クライアントへ配布するため証明書をエクスポートします。
+
+2. **クライアント用ウォレットの作成**
+
+    サーバー証明書を「信頼された証明書」として登録したクライアント用ウォレットを作成します。
+
+3. **サーバ側ネットワーク設定（`sqlnet.ora` / `listener.ora`）**
+
+    `sqlnet.ora` にウォレットのパスを指定し、`listener.ora` に TCPS エンドポイント（例：ポート 1522）を追加します。
+
+4. **クライアント側設定（`sqlnet.ora` / `tnsnames.ora`）**
+
+    クライアント側にもウォレットと接続定義（`tnsnames.ora`）を配置します。
+
+</Steps>
+
+## チュートリアル
+
+<CardGrid>
+  <LinkCard
+    title="NNE接続の構成"
+    description="sqlnet.ora の設定によりネイティブ・ネットワーク暗号化を有効化し、tshark で通信が暗号化されることを確認します。"
+    href="./tutorial/nne-setup"
+  />
+  <LinkCard
+    title="TLS接続の構成"
+    description="orapki でウォレット・自己署名証明書を作成し、TCPS（ポート 1522）で TLS 接続を構成します。"
+    href="./tutorial/tls-setup"
+  />
+</CardGrid>
+
+## 参考リンク
+
+- [Oracle AI Database Netサービス管理者ガイド - 26ai](https://docs.oracle.com/cd/G47991_01/netag/index.html)
+- [sqlnet.oraファイルのパラメータ - 26ai](https://docs.oracle.com/cd/G47991_01/netrf/parameters-for-the-sqlnet.ora.html)
+- [listener.oraファイル内のOracle Net Listenerパラメータ - 26ai](https://docs.oracle.com/cd/G47991_01/netrf/oracle-net-listener-parameters-in-listener-ora.html)
