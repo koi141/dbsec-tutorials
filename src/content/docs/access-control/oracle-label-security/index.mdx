@@ -1,0 +1,115 @@
+---
+title: Oracle Label Security
+description: Oracle Label Security（OLS）の概要と、ラベルベースの行レベルアクセス制御の仕組み、チュートリアルの案内です。
+sidebar:
+  label: 概要
+  order: 0
+---
+import { Steps, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+## Oracle Label Security とは
+
+Oracle Label Security（OLS）は、データ行に**ラベル**を付与し、ユーザーに割り当てたラベルレベルと照合することで行レベルのアクセス制御を実現する機能です。
+
+同じ表にアクセスしても、ユーザーが持つラベルレベル以下のデータしか参照できないため、アプリケーション側の変更なしにデータの機密レベルに応じたアクセス制御を実現できます。
+
+## ラベルの構成要素
+
+ラベルは以下の3つの要素から構成されます。必須なのは**レベル**のみで、区分とグループはオプションです。
+
+| 要素 | 必須 | 説明 |
+|---|---|---|
+| **レベル（Level）** | 必須 | アクセス権の上下を表す数値。数値が大きいほど機密性が高い |
+| **区分（Compartment）** | 任意 | 水平方向の分類。同一レベル内でさらに分離したい場合に使用 |
+| **グループ（Group）** | 任意 | 階層的なグループ管理。親グループが子グループのデータにアクセスできる |
+
+## 仕組みの概要
+
+ユーザーに設定した**ユーザーラベル**と、データ行に付与した**データラベル**を照合してアクセス可否を判断します。
+
+```
+ポリシー: OLS_POL_DEMO
+レベル定義:  SENSITIVE(4000) > CONFIDENTIAL(3000) > INTERNAL(2000)
+
+データ行のラベル:
+  IT_PROG   → INTERNAL(200)
+  AC_MGR    → SENSITIVE(400)   ← 機密性が高い
+  SA_REP    → CONFIDENTIAL(300)
+
+ユーザーラベル（max_level / min_level）:
+  HR        → max: SENS  / min: INTL  → 全データ参照可（SENS/CONF/INTL）
+  SALES_APP → max: CONF  / min: INTL  → CONF/INTL のみ参照可
+                                        SENS（AC_MGR, SA_MAN）は非表示
+```
+
+テーブルにポリシーを適用すると、ラベルを格納する **NUMBER 型のラベル列**が自動的に追加されます。
+ラベルの設定は `CHAR_TO_LABEL`、参照時の変換は `LABEL_TO_CHAR` 関数を使います。
+
+## 主要パッケージと操作
+
+### OLS の有効化
+
+| プロシージャ | 説明 |
+|---|---|
+| `LBACSYS.CONFIGURE_OLS` | OLS を構成する（初回のみ） |
+| `LBACSYS.OLS_ENFORCEMENT.ENABLE_OLS` | OLS を有効化する（PDB 再起動が必要） |
+| `LBACSYS.OLS_ENFORCEMENT.DISABLE_OLS` | OLS を無効化する |
+
+### ポリシー・レベル・ラベルの管理
+
+| パッケージ | 主なプロシージャ | 用途 |
+|---|---|---|
+| `SA_SYSDBA` | `CREATE_POLICY` / `ENABLE_POLICY` / `DROP_POLICY` | ポリシーの作成・有効化・削除 |
+| `SA_COMPONENTS` | `CREATE_LEVEL` / `DROP_LEVEL` | レベルの定義・削除 |
+| `SA_LABEL_ADMIN` | `CREATE_LABEL` / `DROP_LABEL` | データラベルの作成・削除 |
+| `SA_USER_ADMIN` | `SET_LEVELS` / `DROP_USER_ACCESS` | ユーザーラベルの設定・削除 |
+| `SA_POLICY_ADMIN` | `APPLY_TABLE_POLICY` / `ENABLE_TABLE_POLICY` / `REMOVE_TABLE_POLICY` | テーブルへのポリシー適用・制御 |
+
+## 主要ビュー
+
+| ビュー | 内容 |
+|---|---|
+| `DBA_OLS_STATUS` | OLS の構成・有効化状態（`OLS_CONFIGURE_STATUS` / `OLS_ENABLE_STATUS`） |
+| `ALL_SA_LEVELS` | ポリシーに定義されたレベル一覧 |
+| `ALL_SA_LABELS` | 作成されたデータラベル一覧（`LABEL_TAG`・`LABEL_VALUE`） |
+| `ALL_SA_USER_LABELS` | ユーザーに割り当てられたラベル設定 |
+
+## このサイトで扱う内容
+
+HR スキーマの `JOB_HISTORY` 表をコピーし、3段階のレベル（SENSITIVE / CONFIDENTIAL / INTERNAL）を持つポリシーを適用します。
+`HR` ユーザーと `SALES_APP` ユーザーで参照できるデータが異なることを確認します。
+
+<Steps>
+
+1. [`Oracle Label Security の準備`](./tutorial/1-enable-ols)
+
+    OLS を有効化し（`CONFIGURE_OLS` / `ENABLE_OLS`）、PDB を再起動します。`SA_SYSDBA.CREATE_POLICY` でポリシーを作成・有効化します。
+
+2. [`OLS ポリシーの準備`](./tutorial/2-setup-ols-policy)
+
+    レベル（SENS / CONF / INTL）・データラベル・ユーザーラベルを作成し、`JOB_HISTORY_4OLS` 表にポリシーを適用します。`CHAR_TO_LABEL` でデータ行にラベルを付与します。
+
+3. [`ラベル制御の確認`](./tutorial/3-check-ols)
+
+    `HR` ユーザーは全10行が見え、`SALES_APP` ユーザーはSENSレベルの行（AC_MGR / SA_MAN）が非表示になって8行のみ参照できることを確認します。
+
+4. [`OLS 設定の削除`](./tutorial/4-cleanup)
+
+    テーブルポリシー・ユーザーラベル・ラベル・レベル・ポリシーを順に削除し、OLS を無効化してクリーンアップします。
+
+</Steps>
+
+## 補足ページ
+
+<CardGrid>
+  <LinkCard
+    title="ラベルデータとラベル列の扱い"
+    description="数値として管理されるラベル列を使った絞り込み・ソート操作と、HIDE オプションによるラベル列の非表示設定方法を解説します。"
+    href="./advanced-label-column"
+  />
+</CardGrid>
+
+## 参考リンク
+
+- [Oracle Label Security 管理者ガイド - 26ai](https://docs.oracle.com/cd/G47991_01/olsag/index.html)
+- [Oracle Label Security PL/SQL パッケージ - 26ai](https://docs.oracle.com/cd/G47991_01/olsag/oracle-label-security-pl-sql-packages.html)

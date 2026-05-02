@@ -1,0 +1,108 @@
+---
+title: ローカルユーザー MFA
+description: Oracle Database のローカルユーザーに OMA（Oracle Mobile Authenticator）プッシュ通知による多要素認証を設定する機能の概要と、チュートリアルの案内です。
+sidebar:
+  label: 概要
+  order: 0
+---
+import { Steps, Aside } from '@astrojs/starlight/components';
+
+## ローカルユーザー MFA とは
+
+Oracle Database では、ローカルユーザーのログインに対して多要素認証（MFA）を構成できます。
+パスワードに加えて第二の認証要素を要求することで、パスワード漏えい時の不正ログインリスクを低減します。
+
+ローカルユーザー向け MFA は OCI IAM と連携し、以下の方式をサポートしています。
+
+- **OMA プッシュ通知**（Oracle Mobile Authenticator）— スマートフォンへのプッシュ通知で承認
+- **Cisco Duo プッシュ通知** — Duo モバイルアプリによる承認
+- **証明書ベース** — クライアント証明書による第二要素
+
+このチュートリアルでは **OMA プッシュ通知**を使用します。
+
+## 仕組みの概要
+
+```
+[ DBクライアント ]     [ Oracle Database ]      [ OCI IAM ]
+        |                     |                     |
+        |── パスワードで接続 ──▶|                     |
+        |                     |── OMAプッシュ要求 ──▶|
+        |                     |                     |── プッシュ通知送信 ─▶ [ OMAアプリ ]
+        |                     |                     |                           |
+        |                     |◀──── 承認結果 ───────|◀──────── 承認 ────────────|
+        |◀── 接続完了 ─────────|                     |
+```
+
+1. DB ユーザーがパスワードで接続要求を送る
+2. DB が OCI IAM（機密アプリケーション）経由でユーザーの OMA アプリへプッシュ通知を送る
+3. ユーザーがスマートフォンで承認すると、DB が接続を許可する
+
+DB と OCI IAM の連携には **OAuth クライアント（機密アプリケーション）** を使用します。
+クライアント ID / シークレットは DB サーバーのウォレット（secretstore）に格納します。
+
+## サポートバージョンと制限事項
+
+### サポートバージョン
+
+| バージョン | 最低パッチレベル |
+|---|---|
+| 19c | 19.28 以降 |
+| 23c / 23ai | 23.9 以降 |
+
+### MFA が適用されない接続方式
+
+以下の接続・認証方式では MFA はサポートされていません。
+
+- 直接ログインの RAS ユーザー
+- アプリケーション接続（サーバー間接続を含む）
+- 集中管理ユーザー（CMU）接続
+- 外部パスワードファイルを使用した管理接続（OMA / Duo プッシュ）
+- HTTP ダイジェスト認証
+- ロール・パスワード
+
+<Aside type="caution">
+DB または PDB がクローズ状態の場合、プッシュ通知による MFA は失敗します。この状態では証明書ベースの MFA のみサポートされます。
+</Aside>
+
+## 主要コンポーネント
+
+| コンポーネント | 説明 |
+|---|---|
+| **機密アプリケーション（IAM）** | DB が OMA プッシュ要求を送るための OAuth クライアント。`MFA client` と `User administrator` ロールが必要 |
+| **`MFA_OMA_IAM_DOMAIN_URL`** | OMA プッシュ通知先の Identity Domain URL を指定する初期化パラメータ（PDB に設定） |
+| **MFA ウォレット** | `<WALLET_ROOT>/mfa`（CDB）または `<WALLET_ROOT>/<PDB GUID>/mfa`（PDB）に作成する orapki ウォレット |
+| **secretstore エントリ** | `orapki secretstore create_entry` でクライアント ID / シークレットをウォレットに格納する |
+
+### DBユーザーへの MFA 要素の設定
+
+```sql
+-- ユーザー作成時に OMA プッシュ要素を指定する
+CREATE USER <ユーザー名> IDENTIFIED BY <パスワード>
+  AND FACTOR 'OMA_PUSH' AS '<メールアドレス>';
+
+-- 既存ユーザーに追加する場合
+ALTER USER <ユーザー名> ADD FACTOR 'OMA_PUSH' AS '<メールアドレス>';
+```
+
+メールアドレスは OCI IAM 側のユーザーアカウントと紐付くため、初回登録時に IAM ユーザーのアクティベーションと OMA アプリの設定が必要になります。
+
+## このサイトで扱う内容
+
+Oracle Base Database Service の PDB を対象に、OMA プッシュ通知による MFA の設定と動作確認を行います。
+
+<Steps>
+
+1. [`MFA を設定する`](./tutorial/1-setup-oma-push.md)
+
+    OCI IAM で機密アプリケーション（OAuth クライアント）を作成し、`MFA_OMA_IAM_DOMAIN_URL` パラメータと MFA ウォレット（secretstore）の設定を行います。
+
+2. [`OMA プッシュでログインする`](./tutorial/2-login-oma-push)
+
+    DB ユーザーに OMA プッシュ要素を設定し、接続時にスマートフォンへのプッシュ通知が届いて承認することで接続できることを確認します。
+
+</Steps>
+
+## 参考リンク
+
+- [認証の構成 - Oracle Databaseセキュリティガイド](https://docs.oracle.com/cd/G11854_01/dbseg/configuring-authentication.html#GUID-10E4F568-0FA3-4F82-99AA-14FB2947469C)
+- [CREATE USER - SQL言語リファレンス](https://docs.oracle.com/cd/G11854_01/sqlrf/CREATE-USER.html)

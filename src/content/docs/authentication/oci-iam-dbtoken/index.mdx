@@ -1,0 +1,146 @@
+---
+title: OCI IAM DBトークン認証
+description: OCI IAM が発行する一時トークン（DBトークン）を使用して Oracle Database に接続する機能の概要と、チュートリアルの案内です。
+sidebar:
+  label: 概要
+  order: 0
+---
+import { Steps, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+## OCI IAM DBトークン認証とは
+
+OCI IAM が発行する **DBトークン（JWT）** を使って Oracle Database に接続する認証方式です。
+有効期限 60 分の一時的なクレデンシャルを使用するため、固定パスワードを長期間保持するリスクを排除できます。
+
+接続時にユーザー名・パスワードを入力する必要がなく、`/@<接続記述子名>` の形式で接続します。
+
+## IAM DBパスワード認証との比較
+
+IAM ユーザーを使う点や、グローバルユーザー・グローバルロールによる権限制御の仕組みは IAM DBパスワードと共通ですが、クレデンシャルの種類と取得方法が異なります。
+
+| | IAM DBパスワード | IAM DBトークン |
+|---|---|---|
+| **クレデンシャル** | 長期パスワード | 一時トークン（有効期限 60 分） |
+| **取得方法** | OCI コンソールで発行 | OCI CLI / SDK で取得 |
+| **接続時の入力** | ユーザー名 + DBパスワード | 不要（`/@接続名`） |
+| **静的な資格情報の保持** | あり | なし（トークン取得のみ） |
+| **TLS 必須** | ADB ではデフォルト必須 | 必須 |
+| **クライアントバージョン** | 制約なし（既存ツール対応） | 19.13 / 21.4 以降が必要 |
+
+## 仕組みの概要
+
+```
+[ OCI IAM ]           [ クライアント ]        [ Oracle Database ]
+    |                      |                        |
+    |─ iamuser-hr-admin-01 |                        |
+    |─ iamuser-hr-dev-01   |                        |
+    |                      |                        |
+    |─────────── 1. DBトークン生成要求 ──────────────▶|
+    |      (APIキー / インスタンスプリンシパル)        |
+    |◀────────────── DBトークン(JWT) ────────────────|
+    |            ~/.oci/db-token/token              |
+    |                      |                        |
+    |                      |──────── 2. 接続 ───────▶|
+    |                      |    (OCI_TOKEN + TLS)   |
+    |                      |                        |
+    |                      |                        | 3. トークン検証
+    |                      |                        |   + IAMグループ照合
+    |                      |                        | 4. DBユーザー接続
+    |                      |                        |    (DBUSER_IAM)
+    |                      |                        | 5. ロール付与
+    |                      |                        |    (GLROLE_HR_ADMIN / DEV)
+    |                      |                        |
+```
+
+1. OCI CLI で `oci iam db-token get` を実行し、DBトークンと対応する秘密鍵を取得する
+2. `tnsnames.ora` に `TOKEN_AUTH=OCI_TOKEN` を追加し、`/@<接続名>` で接続する
+3. DB がトークンを検証し、IAM グループに応じたグローバルロールを適用する
+
+## DBトークンの取得方法
+
+### OCI CLI（APIキー認証）
+
+```shell
+# デフォルトプロファイルでトークン取得
+oci iam db-token get
+
+# 特定のプロファイルを指定する場合
+oci iam db-token get --profile iamuser-hr-admin-01
+```
+
+実行すると `~/.oci/db-token/` に以下の3ファイルが生成されます。
+
+```
+~/.oci/db-token/
+├── oci_db_key.pem          # 秘密鍵
+├── oci_db_key_public.pem   # 公開鍵
+└── token                   # DBトークン本体（JWT）
+```
+
+### インスタンスプリンシパル（APIキー不要）
+
+OCI コンピュートインスタンスから接続する場合は、`--auth instance_principal` を指定することでAPIキーなしでトークンを取得できます。
+クライアント環境に静的な資格情報を一切置かない構成が実現できます。
+
+```shell
+oci iam db-token get --auth instance_principal
+```
+
+## 主要な設定
+
+### tnsnames.ora への追記
+
+既存の接続記述子の `security` セクションに `TOKEN_AUTH=OCI_TOKEN` を追加します。
+
+```diff
+ db-token = (
+   description=
+     (address=(protocol=tcps)(port=1522)(host=<ホスト>))
+     (connect_data=(service_name=<サービス名>))
+-    (security=(ssl_server_dn_match=yes))
++    (security=(ssl_server_dn_match=yes)(TOKEN_AUTH=OCI_TOKEN))
+   )
+```
+
+トークンファイルをデフォルト以外の場所に置く場合は `TOKEN_LOCATION` で指定します（トークンと秘密鍵を一緒に移動する必要があります）。
+
+### 接続コマンド
+
+```shell
+sql /nolog
+
+SQL> connect /@db-token
+```
+
+## チュートリアルについて
+
+ADB を対象に、2種類の IAM ユーザーのトークンでそれぞれ権限が異なることを確認します。
+IAM・DB 側の初期設定は [OCI IAM DBパスワード認証](../oci-iam-dbcredential/)のチュートリアルと共通です。
+
+<Steps>
+
+1. [`セットアップ`](./tutorial/1-setup-ocicli)
+
+    Identity Domain・IAM ユーザー・グループの準備、DB のグローバルユーザー／ロール作成、IAM ポリシーの設定を行います。あわせて OCI CLI のインストールと APIキーの登録を行います。
+
+2. [`トークンを取得してアクセスする`](./tutorial/2-login-dbtoken)
+
+    `oci iam db-token get` で admin / dev 各ユーザーのトークンを取得し、それぞれ `/@db-token` で接続します。トークンを切り替えることで適用されるグローバルロールが変わることを確認します。
+
+</Steps>
+
+## 補足ページ
+
+<CardGrid>
+  <LinkCard
+    title="インスタンスプリンシパルによる接続"
+    description="OCI コンピュートインスタンスのインスタンスプリンシパルを使い、APIキー不要でDBトークンを取得して Autonomous Database に接続します。静的な資格情報をクライアントに残さない構成です。"
+    href="./login-Instanceprincipal"
+  />
+</CardGrid>
+
+## 参考リンク
+
+- [IAM を使用したデータベース・アクセス - ADB ドキュメント](https://docs.oracle.com/ja-jp/iaas/autonomous-database-serverless/doc/iam-access-database.html)
+- [OCI CLI db-token コマンドリファレンス](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/iam/db-token.html)
+- [クライアント側セキュリティ（JDBC）](https://docs.oracle.com/en/database/oracle/oracle-database/19/jjdbc/client-side-security.html#GUID-62AD3F23-21B5-49D3-8325-313267444ADD)

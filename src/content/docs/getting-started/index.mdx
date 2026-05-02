@@ -1,0 +1,68 @@
+---
+title: 環境のセットアップ
+description: チュートリアルを進めるための Oracle Database 26ai FREE のインストール、SQLcl クライアント、サンプルスキーマ・ユーザーの準備手順です。
+sidebar:
+  label: 概要
+  order: 0
+---
+import { Steps, CardGrid, LinkCard, Aside } from '@astrojs/starlight/components';
+
+このサイトでは、Oracle Database を題材に DB セキュリティの基本〜実践を手順ベースで学べるようにまとめています。
+このセクションでは、以降のチュートリアルを進めるための環境を準備します。
+
+## 使用する環境
+
+チュートリアルは **Oracle Database 26ai FREE** で実施できます。
+FREE エディションは従来の XE（Express Edition）と比べてセキュリティ機能が多く開放されており、以下の機能を無償で試せます。
+
+- TDE（透過的データ暗号化）
+- Data Redaction
+- Oracle Label Security
+- Virtual Private Database
+- Database Vault
+- SQL Firewall
+- ファイングレイン監査
+
+<Aside type="note">
+このサイトでは、OCI IAM 連携（DBパスワード / DBトークン）や MFA など、クラウドサービスと組み合わせるチュートリアルは Autonomous Database または Base Database Service を使用します。実行結果の例も一部 Base DB Service 環境のものを使っています。
+</Aside>
+
+## チュートリアルで使うコンポーネント
+
+| コンポーネント | 説明 |
+|---|---|
+| **Oracle AI Database 26ai FREE** | CDB + PDB（FREEPDB1）構成のデータベース本体 |
+| **SQLcl** | `sql` コマンドで起動する Oracle の CLI クライアント。補完・整形機能あり |
+| **HR スキーマ** | `EMPLOYEES`・`JOB_HISTORY` などを含む公式サンプルスキーマ |
+| **SALES_APP ユーザー** | HR スキーマへの SELECT のみを持つ制限付きユーザー（アクセス制御デモ用） |
+
+## 準備の流れ
+
+まず最初に DB 本体とクライアントを用意し、各チュートリアルで必要になった段階でサンプルスキーマ・ユーザーを追加します。
+
+<Steps>
+
+1. [`Oracle Database 26ai FREE の準備`](./oracle-db26ai)
+
+    Oracle Linux 9 への RPM インストールを例に、`oracle-ai-database-preinstall-26ai` のセットアップから `configure` スクリプトによる CDB/PDB 作成、環境変数設定、リスナー確認までを行います。
+
+2. [`SQLcl のインストール`](./oracle-client)
+
+    `dnf install sqlcl` または ZIP ダウンロードで SQLcl を用意し、簡易接続（EZCONNECT）と `tnsnames.ora` を使った接続方法を確認します。
+
+3. [`サンプルスキーマ（HR）を準備する`](./sample-schema)
+
+    GitHub から HR スキーマのインストールスクリプトを取得し、PDB に `hr_install.sql` を実行して `EMPLOYEES`・`JOB_HISTORY` など 7 テーブルを作成します。
+
+4. [`サンプルユーザーを準備する`](./sample-users)
+
+    `SALES_APP` ユーザーを作成し、`GRANT SELECT ANY TABLE ON SCHEMA HR` でスキーマ単位の参照権限（23ai 新機能）を付与します。
+
+</Steps>
+
+## 参考リンク
+
+- [Oracle AI Database 26ai ドキュメント（日本語）](https://docs.oracle.com/cd/G47991_01/books.html)
+- [Oracle AI Database Free インストレーション・ガイド for Linux](https://docs.oracle.com/cd/G47991_01/xeinl/index.html)
+- [SQLcl ダウンロード](https://www.oracle.com/database/sqldeveloper/technologies/sqlcl/download/)
+- [HR サンプルスキーマ（GitHub）](https://github.com/oracle-samples/db-sample-schemas)

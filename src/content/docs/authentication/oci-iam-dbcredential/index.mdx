@@ -1,0 +1,103 @@
+---
+title: OCI IAM DBパスワード認証
+description: OCI IAM Identity Domains の DBパスワードを使用して Oracle Database に接続する機能の概要と、チュートリアルの案内です。
+sidebar:
+  label: 概要
+  order: 0
+---
+import { Steps, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+## OCI IAM DBパスワード認証とは
+
+OCI IAM Identity Domains には、Database 接続専用のクレデンシャルとして **「DBパスワード」** が用意されています。
+IAM ユーザーにこの DBパスワードを設定することで、IAM のユーザー名と DBパスワードを使って Oracle Database にログインできます。
+
+OCI コンソールへのログインパスワードとは独立しているため、役割ごとに異なるクレデンシャルを使い分けることができます。
+
+## 主な特徴
+
+- **既存ツールをそのまま利用できる** — SQL*Plus / SQLcl / SQL Developer などの接続ツールで、ユーザー名に `<ドメイン名>/<IAMユーザー名>` を指定するだけで接続できます
+- **DB側のパスワード管理が不要** — DB 内にユーザーのパスワードを持たず、認証は OCI IAM 側で行われます
+- **IAM で一元管理** — ユーザーの無効化・パスワードリセットを OCI コンソールから操作できます。コンソール自体への二要素認証やアクセス元 IP 制限も適用できます
+- **グループベースの権限制御** — IAM グループと DB のグローバルロールを紐付けることで、グループメンバーシップに応じた権限分離が可能です
+
+## 仕組みの概要
+
+IAM ユーザーは **グローバルユーザー（Global User）** を経由して DB に接続します。
+同一グローバルユーザーに複数の IAM ユーザーをマッピングしつつ、**グローバルロール（Global Role）** で権限を分離するのがポイントです。
+
+```
+OCI IAM
+  ├── iamuser-hr-admin-01 → iamgroup-hr-admin ──────────────────────────────────┐
+  ├── iamuser-hr-dev-01   → iamgroup-hr-dev ─────────────────────────────────┐  │
+  └── iamgroup-connect    → 両ユーザーが所属 ──────────────────────────────┐  │  │
+                                                                          │  │  │
+                                ↓                                         │  │  │
+Oracle Database                                                           │  │  │
+  ├── DBUSER_IAM        ← IAM_GROUP_NAME=iamgroup-connect （接続ユーザー）─┘  │  │
+  ├── GLROLE_HR_DEV     ← IAM_GROUP_NAME=iamgroup-hr-dev （参照権限のみ）┘ ───┘  │
+  └── GLROLE_HR_ADMIN   ← IAM_GROUP_NAME=iamgroup-hr-admin（admin権限）──────────┘ 
+```
+
+2人の IAM ユーザーは DB 上では同一の `DBUSER_IAM` として扱われますが、所属グループに応じて **異なるグローバルロールが適用**されます。
+また統合監査の `EXTERNAL_USERID` 列には OCI ユーザーの OCID が記録されるため、同一 DB ユーザーでも「誰が操作したか」を追跡できます。
+
+## 主要コンポーネント
+
+| コンポーネント | 説明 |
+|---|---|
+| **IAM DBパスワード** | DB 接続専用のパスワード。コンソールログインとは別に IAM ユーザー詳細画面で発行する |
+| **Identity Domain** | IAM ユーザー・グループを管理する論理単位。`domain-db/iamgroup-xxx` の形式でグループを指定する |
+| **グローバルユーザー** | `IDENTIFIED GLOBALLY AS 'IAM_GROUP_NAME=<ドメイン>/<グループ>'` で作成。IAM グループ全員の接続ユーザーとなる |
+| **グローバルロール** | 同じ構文で IAM グループに紐付け。グループごとに異なる DB 権限を付与できる |
+| **`IDENTITY_PROVIDER_TYPE`** | `OCI_IAM` を設定することで外部認証を有効化する（ADB は `DBMS_CLOUD_ADMIN.ENABLE_EXTERNAL_AUTHENTICATION` で設定） |
+
+### 接続時のユーザー名形式
+
+```text
+<ドメイン名>/<IAMユーザー名>
+例: domain-db/iamuser-hr-admin-01
+```
+
+`/` が含まれるため、SQLcl / SQL*Plus ではダブルクォートで囲む必要があります。
+
+```sql
+conn "domain-db/iamuser-hr-admin-01"@<接続文字列>
+```
+
+## チュートリアルについて
+
+Autonomous Database（ADB）を対象に、2種類の IAM ユーザーがそれぞれ異なる権限でアクセスできることを確認します。
+ADB への接続には Wallet（mTLS）を使用します。
+
+<Steps>
+
+1. [`OCI のセットアップ`](./tutorial/1-setup-ocidomain)
+
+    Identity Domain・IAM ユーザー（`iamuser-hr-admin-01` / `iamuser-hr-dev-01`）・IAM グループを作成し、各ユーザーに DBパスワードを発行します。
+
+2. [`Database のセットアップ`](./tutorial/2-setup-database)
+
+    外部認証（`OCI_IAM`）を有効化し、IAM グループと紐付くグローバルユーザー（`DBUSER_IAM`）とグローバルロール（`GLROLE_HR_ADMIN` / `GLROLE_HR_DEV`）を作成します。
+
+3. [`DBパスワードでログインする`](./tutorial/3-login-dbcredential)
+
+    admin / dev の各ユーザーで DB に接続し、IAM グループに応じて異なるロールが適用されることを確認します。
+
+</Steps>
+
+## 補足ページ
+
+<CardGrid>
+  <LinkCard
+    title="監査ログを確認する"
+    description="複数の IAM ユーザーが同一 DB ユーザーにマッピングされる構成でも、統合監査の EXTERNAL_USERID に OCI ユーザーの OCID が記録されることを確認します。"
+    href="./audit"
+  />
+</CardGrid>
+
+## 参考リンク
+
+- [IAM データベース・パスワード - OCI ドキュメント](https://docs.oracle.com/ja-jp/iaas/Content/Identity/Concepts/usercredentials_topic-iam_database_passwords.htm)
+- [Autonomous Database での IAM 認証の有効化](https://docs.oracle.com/en/cloud/paas/autonomous-database/serverless/adbsb/enable-iam-authentication.html)
+- [非 ADB での IAM ユーザー認証設定](https://docs.oracle.com/cd/F19136_01/dbseg/authenticating-and-authorizing-iam-users-oracle-dbaas-databases.html)

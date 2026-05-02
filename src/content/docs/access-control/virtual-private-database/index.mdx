@@ -1,0 +1,121 @@
+---
+title: Virtual Private Database
+description: Oracle Virtual Private Database（VPD）の概要と、ポリシー関数による行・列レベルアクセス制御の仕組み、チュートリアルの案内です。
+sidebar:
+  label: 概要
+  order: 0
+---
+import { Steps, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+## Virtual Private Database とは
+
+Virtual Private Database（VPD）は、`DBMS_RLS` パッケージを使ってテーブル・ビューに**ポリシー**を設定し、SQL 実行時に自動的に WHERE 句を付加することで行・列レベルのアクセス制御を実現する機能です。
+
+アプリケーション側のコードを変更せず、データベース層で透過的にアクセス制御できます。同じ SQL でもユーザーやセッション属性によって返される結果が変わります。
+
+## 行制御と列制御
+
+### 行レベル制御
+
+ポリシー関数が返す述語を WHERE 句に付加することで、参照できる**行**を制限します。
+
+```sql
+-- ポリシー関数の例（セッションユーザーで絞り込み条件を切り替え）
+CREATE OR REPLACE FUNCTION hr.get_sales_predicate(
+  p_schema IN VARCHAR2,
+  p_table  IN VARCHAR2
+) RETURN VARCHAR2 IS
+BEGIN
+  IF SYS_CONTEXT('USERENV', 'SESSION_USER') = 'SALES_APP' THEN
+    RETURN 'JOB_ID LIKE ''SA_%''';  -- 営業系のみ
+  ELSE
+    RETURN '1=1';                   -- 全件
+  END IF;
+END;
+```
+
+### 列レベル制御
+
+`DBMS_RLS.ADD_POLICY` の `sec_relevant_cols` パラメータで対象列を指定します。指定列がクエリに含まれたときだけポリシーが発動します。
+
+| `sec_relevant_cols_opt` | 動作 |
+|---|---|
+| 未指定（デフォルト）| 条件を満たさない行を**除外**（0件になる場合あり） |
+| `DBMS_RLS.ALL_ROWS` | 条件を満たさない行の対象列を **NULL で表示** |
+
+```sql
+BEGIN
+  DBMS_RLS.ADD_POLICY (
+    object_schema         => 'HR',
+    object_name           => 'EMPLOYEES',
+    policy_name           => 'employees_salary_col_vpd_policy',
+    function_schema       => 'HR',
+    policy_function       => 'get_masking_salary_col',
+    sec_relevant_cols     => 'SALARY',
+    sec_relevant_cols_opt => DBMS_RLS.ALL_ROWS  -- NULL表示
+  );
+END;
+```
+
+## 主要プロシージャ
+
+| プロシージャ | 説明 |
+|---|---|
+| `DBMS_RLS.ADD_POLICY` | テーブル・ビューにポリシーを追加する |
+| `DBMS_RLS.DROP_POLICY` | ポリシーを削除する |
+| `DBMS_RLS.ENABLE_POLICY` | ポリシーを有効化・無効化する |
+
+### ADD_POLICY の主なパラメータ
+
+| パラメータ | 説明 |
+|---|---|
+| `object_schema` / `object_name` | ポリシーを適用するスキーマ・テーブル名 |
+| `policy_name` | ポリシー名（テーブル内で一意） |
+| `function_schema` / `policy_function` | ポリシー関数のスキーマと関数名 |
+| `sec_relevant_cols` | 列レベル制御の対象列（カンマ区切り） |
+| `sec_relevant_cols_opt` | `DBMS_RLS.ALL_ROWS` で NULL 表示モードを指定 |
+| `statement_types` | 適用する DML 種別（デフォルト: `SELECT,INSERT,UPDATE,DELETE`） |
+
+## 主要ビュー
+
+| ビュー | 内容 |
+|---|---|
+| `ALL_POLICIES` | 作成されたポリシー一覧（関数名・適用 DML・ポリシータイプなど） |
+| `ALL_POLICY_GROUPS` | ポリシーグループ情報 |
+| `ALL_POLICY_CONTEXTS` | ポリシーコンテキスト（`SYS_CONTEXT` の名前空間など） |
+
+## このサイトで扱う内容
+
+HR スキーマの `EMPLOYEES` 表を対象に、`SALES_APP` ユーザーへの行・列レベル制御を設定します。
+`HR` ユーザーは全 107 行・全列を参照でき、`SALES_APP` ユーザーは営業系の 35 行のみ・SALARY 列は非表示（または NULL）になることを確認します。
+
+<Steps>
+
+1. [`VPD で行制御を行う`](./tutorial/1-row-control)
+
+    `SYS_CONTEXT('USERENV', 'SESSION_USER')` を利用したポリシー関数を作成し、`DBMS_RLS.ADD_POLICY` でポリシーを適用します。`HR` は全件、`SALES_APP` は `JOB_ID LIKE 'SA_%'` の 35 行のみ参照できることを確認します。
+
+2. [`VPD で列制御を行う`](./tutorial/2-column-control)
+
+    `sec_relevant_cols => 'SALARY'` で列を指定したポリシーを追加します。`SALES_APP` で SALARY 列を含むクエリを実行すると行が除外されること、`sec_relevant_cols_opt => DBMS_RLS.ALL_ROWS` を指定すると NULL 表示になることを確認します。
+
+3. [`VPD の設定を削除する`](./tutorial/3-cleanup)
+
+    `DBMS_RLS.DROP_POLICY` でポリシーを削除し、ポリシー関数も `DROP FUNCTION` で削除します。`ALL_POLICIES` で削除を確認します。
+
+</Steps>
+
+## 補足ページ
+
+<CardGrid>
+  <LinkCard
+    title="CLIENT_IDENTIFIER を使ったアクセス制御"
+    description="DBMS_SESSION.SET_IDENTIFIER でセッションに識別子を設定し、VPD ポリシー関数内で参照することで、アプリケーションユーザー単位の行制御を実現する方法を解説します。"
+    href="./client-identifier"
+  />
+</CardGrid>
+
+## 参考リンク
+
+- [Oracle Virtual Private Database - 26ai セキュリティガイド](https://docs.oracle.com/cd/G47991_01/dbseg/using-oracle-virtual-private-database.html)
+- [DBMS_RLS パッケージ - 26ai](https://docs.oracle.com/cd/G47991_01/arpls/DBMS_RLS.html)

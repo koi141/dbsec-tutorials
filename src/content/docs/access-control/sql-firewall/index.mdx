@@ -1,0 +1,96 @@
+---
+title: SQL Firewall
+description: Oracle SQL Firewall の概要と、許可リストによるSQL制御の仕組み、チュートリアルの案内です。
+sidebar:
+  label: 概要
+  order: 0
+---
+import { Steps, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+## SQL Firewall とは
+
+SQL Firewall は、Oracle Database 23ai から搭載されたセキュリティ機能です。
+対象ユーザーが実行する SQL を事前に学習し、**許可リスト（Allow List）に登録されていない SQL や接続コンテキストをブロック・記録**します。
+
+パスワード漏えいや SQL インジェクションなど、認証を突破した後の不正クエリ実行を防ぐ「最後の防衛ライン」として機能します。
+`DBMS_SQL_FIREWALL` パッケージを通じて管理し、追加のエージェントやハードウェアは不要です。
+
+## 3つのフェーズ
+
+SQL Firewall は以下の3段階で機能します。
+
+1. キャプチャ（学習）
+2. 許可リスト生成
+3. 強制（Enforce）
+
+| フェーズ | プロシージャ | 説明 |
+|---|---|---|
+| **キャプチャ開始** | `DBMS_SQL_FIREWALL.CREATE_CAPTURE` | 対象ユーザーの SQL を収集・正規化して記録する |
+| **キャプチャ停止** | `DBMS_SQL_FIREWALL.STOP_CAPTURE` | 収集を終了する |
+| **許可リスト生成** | `DBMS_SQL_FIREWALL.GENERATE_ALLOW_LIST` | キャプチャログから許可リストを作成する |
+| **許可リスト有効化** | `DBMS_SQL_FIREWALL.ENABLE_ALLOW_LIST` | 許可リストに基づく制御を開始する |
+
+## SQLの正規化とシグネチャ
+
+キャプチャ時、SQL 内のリテラル値はバインド変数（`:SYS_B_0` など）に置換されて**正規化**されます。
+これにより、値が異なっても構造が同じ SQL は同一のシグネチャとして扱われます。
+
+```sql
+-- 実行したSQL（異なる値）
+SELECT first_name FROM hr.employees WHERE employee_id IN (102, 200);
+SELECT first_name FROM hr.employees WHERE employee_id IN (101, 300);
+
+-- キャプチャされる正規化済みSQL（同一シグネチャ）
+SELECT FIRST_NAME FROM HR.EMPLOYEES WHERE EMPLOYEE_ID IN (:SYS_B_0, :SYS_B_1)
+```
+
+許可リスト有効化後は、同じ構造であれば値が変わっても実行できます。逆に構造が異なると `ORA-47605: SQL Firewall violation` でブロックされます。
+
+## 主要なビュー
+
+| ビュー | 内容 |
+|---|---|
+| `DBA_SQL_FIREWALL_STATUS` | SQL Firewall 全体の有効/無効状態 |
+| `DBA_SQL_FIREWALL_CAPTURE_LOGS` | キャプチャしたSQLとシグネチャ（`SQL_SIGNATURE`） |
+| `DBA_SQL_FIREWALL_ALLOWED_SQL` | 許可リストに登録されたSQL（`ALLOWED_SQL_ID`） |
+| `DBA_SQL_FIREWALL_VIOLATIONS` | 違反ログ（SQL文・IP・クライアントプログラム・OSユーザーなど） |
+
+## このサイトで扱う内容
+
+HR スキーマにアクセスする `SALES_APP` ユーザーを対象に、SQL キャプチャ→許可リスト生成→ブロック確認の一連の流れを体験します。
+
+<Steps>
+
+1. [`SQL Firewall の有効化`](./tutorial/1-enable-sqlfw)
+
+    `DBMS_SQL_FIREWALL.ENABLE` で SQL Firewall を有効化し、`DBA_SQL_FIREWALL_STATUS` でステータスを確認します。
+
+2. [`SQL をキャプチャして学習する`](./tutorial/2-capture-traffic)
+
+    `SALES_APP` ユーザーのキャプチャを開始し、複数の SQL を実行します。停止後に `DBA_SQL_FIREWALL_CAPTURE_LOGS` でキャプチャ結果と SQL シグネチャを確認します。
+
+3. [`SQL の許可リストを作成する`](./tutorial/3-create-allow-list)
+
+    `GENERATE_ALLOW_LIST` でキャプチャログから許可リストを生成し、`ENABLE_ALLOW_LIST` で強制モードを有効化します（`ENFORCE_ALL`・`block => TRUE`）。
+
+4. [`動作を確認する`](./tutorial/4-check-sqlfw)
+
+    許可リストに含まれる SQL は実行でき、含まれない SQL は `ORA-47605` でブロックされることを確認します。違反ログ（`DBA_SQL_FIREWALL_VIOLATIONS`）の確認と、許可リストからの個別削除も行います。
+
+</Steps>
+
+## 補足ページ
+
+<CardGrid>
+  <LinkCard
+    title="Data Safe から設定を行う（準備中）"
+    description="Oracle Data Safe の GUI から SQL Firewall を構成する方法を扱います。"
+    href="./setup-from-datasafe"
+  />
+</CardGrid>
+
+## 参考リンク
+
+- [Oracle SQL Firewall - 26ai セキュリティガイド](https://docs.oracle.com/cd/G47991_01/dbseg/using-oracle-sql-firewall.html)
+- [DBMS_SQL_FIREWALL パッケージ - 26ai](https://docs.oracle.com/cd/G47991_01/arpls/DBMS_SQL_FIREWALL.html)
+- [ORA-47605 エラーリファレンス](https://docs.oracle.com/error-help/db/ora-47605/)
