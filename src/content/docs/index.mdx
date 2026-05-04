@@ -41,7 +41,7 @@ import { LinkCard, Card, CardGrid, Aside } from '@astrojs/starlight/components';
   <Card title="利用時データ（Data in Use）" icon="list-format">
     クエリ結果を動的にマスキング・フィルタリングし、権限のないユーザーへの情報漏えいを防ぎます。
 
-    → **Data Redaction / VPD / OLS**
+    → **Data Redaction / VPD / OLS / DDS**
   </Card>
   <Card title="認証・認可" icon="approve-check-circle">
     誰がDBにアクセスできるか・何を操作できるかを制御し、なりすましや不正操作を防ぎます。
@@ -79,7 +79,7 @@ DBへのアクセスや操作を制限し、不正利用・内部脅威を抑止
 <LinkCard
   title="Virtual Private Database"
   description="行・列レベルでアクセス制御を行い、同じ表でもユーザーごとに見えるデータを変えます。アプリケーションのSQLを変えずに、DB側のポリシーで条件を付与できます。"
-  href="./access-control/vpd/"
+  href="./access-control/virtual-private-database/"
 />
 <LinkCard
   title="Database Vault"
@@ -95,6 +95,11 @@ DBへのアクセスや操作を制限し、不正利用・内部脅威を抑止
   title="Oracle Label Security"
   description="ラベル（分類）に基づいてアクセス制御を行い、データの取り扱い基準を一貫させます。ユーザーのラベルとデータのラベルの関係で、参照・更新可否を判定します。"
   href="./access-control/oracle-label-security/"
+/>
+<LinkCard
+  title="Deep Data Security"
+  description="Oracle Database 26ai の新機能。エンドユーザーのコンテキストをベースに行・列レベルのアクセス制御を DB 層で実現します。AI エージェントのようなアドホックなクエリへのデータ保護にも対応します。"
+  href="./access-control/deep-data-security/"
 />
 
 ## 認証

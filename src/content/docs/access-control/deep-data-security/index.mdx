@@ -1,0 +1,91 @@
+---
+title: Deep Data Security
+description: Oracle Database 26ai の新機能 Deep Data Security の概要と、エンドユーザーコンテキストに基づく行・列レベルアクセス制御の仕組みを解説します。
+sidebar:
+  label: 概要
+  order: 0
+---
+import { Steps, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+## Deep Data Security とは
+
+Oracle AI Database 26ai のセキュリティ新機能として **Deep Data Security（DDS）** が GA されました。
+
+この機能の特徴は「**エンドユーザーのコンテキストをベースとしたアクセス制御**」をデータベース層で実現することです。
+通常アプリケーション側で行っていた行・列レベルのアクセス制御をデータベースへ移譲することで、AI エージェントのようなアドホックなクエリに対するデータ保護をより強化できます。
+
+また、OCI IAM Identity Domains や Microsoft Entra ID と連携することで、アイデンティティ・プロバイダーのグループ情報を Data Role として引き継ぎ、認証・接続・アクセス制御までを一気通貫で実装することも可能です。
+
+## 仕組みの概要
+
+```
+[ エンドユーザー ]                [ Oracle Database 26ai ]
+       |                                    |
+       |── 接続（パスワード / IAM トークン）──▶|
+       |                                    | 1. エンドユーザーセキュリティコンテキストを確立
+       |                                    |    ORA_END_USER_CONTEXT.username = "manderson"
+       |                                    |    Data Role: employee_role / manager_role 有効化
+       |                                    |
+       |──── SELECT * FROM hr.employees ───▶|
+       |                                    | 2. Data Grant を評価
+       |                                    |    employee_role: WHERE email = 'manderson'
+       |                                    |    manager_role:  WHERE manager = 'manderson'
+       |                                    |                   （SSN 列は除外）
+       |                                    |
+       |◀──── フィルタ済みの行・列のみ返却 ────|
+```
+
+接続後、セッションは `XS$NULL` という特殊な DB ユーザーとして扱われます。
+実際のエンドユーザー情報は `ORA_END_USER_CONTEXT` で参照できます。
+
+## 主要コンポーネント
+
+| コンポーネント | 説明 |
+|---|---|
+| **END USER** | アクセス制御の主体。ローカルパスワードまたは IAM トークンで接続する |
+| **Data Role** | END USER が保持するデータアクセス権の単位。IAM グループへのマッピングも可能 |
+| **Data Grant** | テーブル単位のアクセス許可定義。`WHERE` 句による行フィルタと列除外（`ALL COLUMNS EXCEPT`）を指定する |
+| **ORA_END_USER_CONTEXT** | エンドユーザーのセッション情報を保持する JSON コンテキスト。Data Grant の `WHERE` 句や SQL 内で参照できる |
+| **Application Identity** | OAuth クライアント ID に紐付くアプリケーション識別子。アプリ自体への Data Role 付与に使用する |
+
+## Data Grant の構造
+
+```sql
+CREATE DATA GRANT <schema>.<grant_name>
+  AS SELECT                          -- 許可する操作（SELECT / UPDATE など）
+     (ALL COLUMNS EXCEPT <col>)      -- 列の除外（省略時は全列）
+  ON <schema>.<table>
+  WHERE <column> = ORA_END_USER_CONTEXT.username   -- 行フィルタ
+  TO <data_role>;
+```
+
+Data Grant は**加算的**に機能します。END USER が複数の Data Role を持つ場合、それぞれの Data Grant で参照できる行・列が合算されます。
+
+## このサイトで扱う内容
+
+<Steps>
+
+1. [`ローカル・エンドユーザーによる Deep Data Security`](./tutorial/localenduser-dds)
+
+    ローカルパスワード認証のエンドユーザーを作成し、Data Role・Data Grant を設定します。`manderson`（manager / employee 両ロール）と `ebaker`（employee のみ）で参照できるデータが異なることを確認します。
+
+2. [`OCI IAM Identity Domains との連携`](./oci-iam-dds)
+
+    OCI IAM の機密アプリケーション・カスタム claim・グループを設定し、IAM グループを Data Role にマッピングします。IAM トークンで接続し、グループに応じたアクセス制御が機能することを確認します。
+
+</Steps>
+
+## 参考
+
+<CardGrid>
+  <LinkCard
+    title="API リファレンス"
+    description="Deep Data Security で使用する DDL 文（CREATE END USER / DATA ROLE / DATA GRANT など）・SQL 関数・データディクショナリビューの一覧です。"
+    href="./api-reference"
+  />
+</CardGrid>
+
+## 参考リンク
+
+- [Deep Data Security 開発者ガイド - 26ai](https://docs.oracle.com/en/database/oracle/oracle-database/26/ddscg/index.html)
+- [ORA_END_USER_CONTEXT - SQL言語リファレンス](https://docs.oracle.com/en/database/oracle/oracle-database/26/sqlrf/ora_end_user_context.html)

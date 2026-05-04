@@ -34,6 +34,7 @@ export default defineConfig({
         {
           label: 'アクセス制御',
           items: [
+            { label: 'Deep Data Security', autogenerate: { directory: 'access-control/deep-data-security' } },
             { label: 'Database Vault', autogenerate: { directory: 'access-control/database-vault' } },
             { label: 'Oracle Label Security', autogenerate: { directory: 'access-control/oracle-label-security' } },
             

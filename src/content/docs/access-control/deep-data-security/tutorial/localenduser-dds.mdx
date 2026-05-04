@@ -1,0 +1,386 @@
+---
+title: ローカル・エンドユーザーによる Deep Data Security
+description: Deep Data Security のローカル・エンドユーザー認証を使い、Data Grant で行・列レベルのアクセス制御を実装するチュートリアルです。
+sidebar:
+  order: 1
+---
+import { Aside } from '@astrojs/starlight/components';
+
+## 実施内容
+
+この手順は、公式ガイドの Chapter 3 をベースに、実行しやすい順序へ整理したものです。
+
+## 前提条件
+
+- 23.26.2 以上のデータベース環境
+
+## 1. 前提の確認
+
+最初に DBA ユーザーで接続し、対象 PDB へ切り替えます。COMPATIBLE は 20.0 以上である必要があります。
+
+```sql
+SQL> sho parameter compatible
+NAME              TYPE    VALUE
+----------------- ------- ------
+compatible        string  23.6.0
+noncdb_compatible boolean FALSE
+```
+
+## 2. サンプルスキーマとデータの作成
+
+`hr.employees` 表を作り、5 行のサンプル従業員データを投入します。  
+
+```sql
+-- USERS表領域があるか確認
+SQL> select TABLESPACE_NAME from dba_tablespaces;
+
+TABLESPACE_NAME
+__________________
+SYSTEM
+SYSAUX
+UNDOTBS1
+TEMP
+USERS
+```
+
+万が一ない場合は、USERS表領域を作成しておきます。
+```
+CREATE TABLESPACE users
+  DATAFILE '<data_file_path>' SIZE 100M
+  AUTOEXTEND ON;
+```
+
+`HR`ユーザー（スキーマ）を作成します。このユーザーは `NO AUTHENTICATION` として作成し、スキーマ限定ユーザーとして直接ログインしない構成にします。
+
+```
+create user hr no AUTHENTICATION
+  default tablespace users
+  quota unlimited on users;
+```
+
+テーブル作成とサンプルデータを投入します。
+
+```
+-- テーブル作成
+CREATE TABLE hr.employees (
+    employee_id   NUMBER PRIMARY KEY,
+    first_name    VARCHAR2(50),
+    last_name     VARCHAR2(50),
+    email         VARCHAR2(128),
+    manager       VARCHAR2(128),
+    ssn           VARCHAR2(20),
+    salary        NUMBER(10,2),
+    phone         VARCHAR2(20)
+);
+
+-- サンプルデータ
+INSERT INTO hr.employees VALUES
+(100, 'Victoria', 'Williams', 'vwilliams', NULL, '219-09-9999', 13000, '555-0100');
+INSERT INTO hr.employees VALUES
+(200, 'Marvin', 'Anderson', 'manderson', 'vwilliams', '457-55-5462', 12030, '555-0200');
+INSERT INTO hr.employees VALUES
+(300, 'Chris', 'Evans', 'cevans', 'vwilliams', '321-12-4567',  6900, '555-0300');
+INSERT INTO hr.employees VALUES
+(400, 'Emma', 'Baker', 'ebaker', 'manderson', '733-02-9821',  8200, '555-0400');
+INSERT INTO hr.employees VALUES
+(500, 'Taylor', 'Mills', 'tmills', 'manderson', '558-76-1243', 9000, '555-0500');
+
+COMMIT;
+```
+
+確認します。
+```
+SELECT * FROM hr.employees ORDER BY employee_id;
+```
+
+```sql
+SQL> SELECT * FROM hr.employees ORDER BY employee_id;
+
+   EMPLOYEE_ID FIRST_NAME    LAST_NAME    EMAIL        MANAGER      SSN               SALARY PHONE
+______________ _____________ ____________ ____________ ____________ ______________ _________ ___________
+           100 Victoria      Williams     vwilliams                 219-09-9999        13000 555-0100
+           200 Marvin        Anderson     manderson    vwilliams    457-55-5462        12030 555-0200
+           300 Chris         Evans        cevans       vwilliams    321-12-4567         6900 555-0300
+           400 Emma          Baker        ebaker       manderson    733-02-9821         8200 555-0400
+           500 Taylor        Mills        tmills       manderson    558-76-1243         9000 555-0500
+```
+
+## 3. ローカル・エンドユーザーの作成
+
+次に、Deep Data Security 用のローカル・エンドユーザーを２人作ります。  
+コンテクストとして参照する `ORA_END_USER_CONTEXT.username` と `hr.employees.email` / `manager` の値が一致するよう、ユーザー名を `manderson` と `ebaker` にすることに注意します。
+
+```
+CREATE END USER "manderson" IDENTIFIED BY <password>;
+CREATE END USER "ebaker" IDENTIFIED BY <password>;
+```
+
+## 4. Data Role と接続用ロールの作成
+
+ローカルエンドユーザーの構成では、Data Role に対して標準ロール経由で `CREATE SESSION` を与えます。  
+ここでは `employee_role` と `manager_role` を作成し、manderson に両方、ebaker に `employee_role` のみを付与します。
+
+```
+-- Data Role の作成
+CREATE DATA ROLE employee_role;
+CREATE DATA ROLE manager_role;
+
+-- 接続用の標準ロール
+CREATE ROLE db_role;
+GRANT CREATE SESSION TO db_role;
+
+-- ログインに必要な接続権限を付与
+GRANT db_role TO employee_role;
+
+-- Data Role を end user に付与
+GRANT DATA ROLE manager_role TO "manderson";
+GRANT DATA ROLE employee_role TO "manderson";
+GRANT DATA ROLE employee_role TO "ebaker";
+```
+
+## 5. Data Grant を作成する
+
+`employee_role` には「自分の行だけ」、`manager_role` には「自分が `manager` 列で一致する行だけ、ただし SSN を除外」という２つの Data Grant を作成します。
+
+
+```sql
+-- employee_role へ自分の email と一致する行の全列を SELECT できる
+CREATE OR REPLACE DATA GRANT hr.employees_own_record
+  AS SELECT
+  ON hr.employees
+  WHERE email = ORA_END_USER_CONTEXT.username
+  TO employee_role;
+
+-- manager_role へ manager 列が自分と一致する行を SELECT（SSN 列は除く）
+CREATE OR REPLACE DATA GRANT hr.manager_direct_reports
+  AS SELECT (ALL COLUMNS EXCEPT ssn)
+  ON hr.employees
+  WHERE manager = ORA_END_USER_CONTEXT.username
+  TO manager_role;
+```
+
+Data Grant は加算的に効きます。  
+そのため、この２つで `manderson` は自分のレコードでは SSN を見られますが、部下である Emma と Taylor の SSN は見えません。`ebaker` は自分のレコードだけを見られるようになります。
+
+## 6. アクセスを確認する
+
+接続する際は、`<host>:<port>/<service_name>` を環境に合わせて指定してください。
+
+### manderson で接続する
+
+```shell
+[oracle@vm-db26 ~]$ sql '"manderson"'/<password>@vm-db26.pubsbnt.koinrtdev.oraclevcn.com:1521/orclpdb1;
+
+SQLcl: Release 25.4 Production on Sun May 03 10:58:57 2026
+
+Copyright (c) 1982, 2026, Oracle.  All rights reserved.
+
+Connected to:
+Oracle AI Database 26ai Enterprise Edition Release 23.26.2.0.0 - Production
+Version 23.26.2.0.0
+
+SQL> 
+```
+
+`hr.employees`表を参照します。
+
+```sql
+SQL> select * from hr.employees;
+
+   EMPLOYEE_ID FIRST_NAME    LAST_NAME    EMAIL        MANAGER      SSN               SALARY PHONE
+______________ _____________ ____________ ____________ ____________ ______________ _________ ___________
+           200 Marvin        Anderson     manderson    vwilliams    457-55-5462        12030 555-0200
+           400 Emma          Baker        ebaker       manderson                        8200 555-0400
+           500 Taylor        Mills        tmills       manderson                        9000 555-0500
+```
+
+`manderson` は `employee_role`（自分の行）と `manager_role`（部下の行・SSN 除く）の両方を持つため、３行が返されます。また、Emma と Taylor の SSN 列は空(NULL)になっていることがわかります。
+
+
+エンドユーザーで接続した場合、`show user` は `XS$NULL` と表示されます。実際に接続中のエンドユーザーは `ORA_END_USER_CONTEXT.username` で確認できます。
+
+```sql
+SQL> show user
+USER is "XS$NULL"
+
+SQL> SELECT ORA_END_USER_CONTEXT.username FROM dual;
+
+USERNAME
+--------------------------------------------------------------------------------
+"manderson"
+
+SQL> select ora_end_user_context;
+
+ORA_END_USER_CONTEXT
+--------------------------------------------------------------------------------
+{"SERVER_HOST":"vm-db26","NLS_DATE_FORMAT":"DD-MON-RR","IS_DG_ROLLING_UPGRADE":"
+```
+
+<Aside type="caution">
+SQLcl（JDBC）では `ORA_END_USER_CONTEXT` の型 119 をフェッチできずエラーになる場合があります。失敗した場合は `JSON_VALUE` で個別フィールドを取得してください。
+確認するだけであれば代わりに SQL*Plus を使用しても構いません。
+```
+SELECT JSON_VALUE(ORA_END_USER_CONTEXT, '$.USERNAME' RETURNING VARCHAR2(128)) AS username FROM dual;
+```
+
+```sql
+SQL> SELECT JSON_VALUE(
+  2           ORA_END_USER_CONTEXT,
+  3           '$.USERNAME'
+  4           RETURNING VARCHAR2(128)
+  5         ) AS username
+  6* FROM dual;
+
+USERNAME
+____________
+manderson
+```
+</Aside>
+
+
+
+### ebaker で接続する
+
+```shell
+[oracle@vm-db26 ~]$ sql '"ebaker"'/<password>@vm-db26.pubsbnt.koinrtdev.oraclevcn.com:1521/orclpdb1;
+
+SQLcl: Release 25.4 Production on Sun May 03 11:02:46 2026
+
+Copyright (c) 1982, 2026, Oracle.  All rights reserved.
+
+Connected to:
+Oracle AI Database 26ai Enterprise Edition Release 23.26.2.0.0 - Production
+Version 23.26.2.0.0
+
+SQL>
+```
+
+`ebaker` は `employee_role` のみのため、自分の行 １件だけが返されます。SSN も自分のレコードなので表示されます。
+
+```sql
+SQL> SELECT * FROM hr.employees;
+
+   EMPLOYEE_ID FIRST_NAME    LAST_NAME    EMAIL     MANAGER      SSN               SALARY PHONE
+______________ _____________ ____________ _________ ____________ ______________ _________ ___________
+           400 Emma          Baker        ebaker    manderson    733-02-9821         8200 555-0400
+```
+
+manderson と同様にユーザー名は `ORA_END_USER_CONTEXT.username` から取得することができます。
+
+```sql
+SQL> SELECT ORA_END_USER_CONTEXT.username FROM dual;
+
+USERNAME
+--------------------------------------------------------------------------------
+"ebaker"
+```
+
+### ORA_END_USER_CONTEXT の全体を確認する
+
+先ほどは `SELECT ORA_END_USER_CONTEXT.username` からユーザー名のみを取り出しましたが、その他に何が取り出せるか全体を確認します。  
+JSON ドット記法でアイテムメソッド（`.string()` / `.number()` など）を付けない場合、戻り値は SQL の VARCHAR2 ではなく JSON 値になります。`JSON_SERIALIZE` を使うと全体を整形して表示できます。
+
+```sql
+SELECT JSON_SERIALIZE(
+         ORA_END_USER_CONTEXT
+         RETURNING VARCHAR2(4000)
+         PRETTY
+       ) AS ctx
+FROM dual;
+```
+
+```sql
+SQL> SELECT JSON_SERIALIZE(
+  2           ORA_END_USER_CONTEXT
+  3           RETURNING VARCHAR2(4000)
+  4           PRETTY
+  5         ) AS ctx
+  6* FROM dual;
+
+CTX
+_________________________________________________________
+{
+  "SERVER_HOST" : "vm-db26",
+  "NLS_DATE_FORMAT" : "DD-MON-RR",
+  "IS_DG_ROLLING_UPGRADE" : "FALSE",
+  "CURRENT_USER" : "XS$NULL",
+  "HOST" : "vm-db26",
+  "NLS_CURRENCY" : "$",
+  "INSTANCE_NAME" : "ORCLCDB",
+  "NLS_DATE_LANGUAGE" : "AMERICAN",
+  "PID" : "97",
+  "NLS_TERRITORY" : "AMERICA",
+  "SCHEDULER_JOB" : "N",
+  "AUTHENTICATION_METHOD" : "PASSWORD",
+  "DB_NAME" : "ORCLPDB1",
+  "UNIFIED_AUDIT_SESSIONID" : "439269382221329887",
+  "LANG" : "US",
+  "ISDBA" : "FALSE",
+  "OS_USER" : "oracle",
+  "AUTHENTICATED_IDENTITY" : "ebaker",
+  "MODULE" : "java@vm-db26 (TNS V1-V3)",
+  "ORACLE_HOME" : "/opt/oracle/product/26ai/dbhome_2",
+  "CURRENT_SCHEMA" : "XS$NULL",
+  "CURRENT_USERID" : "2147483638",
+  "NETWORK_PROTOCOL" : "tcp",
+  "IP_ADDRESS" : "10.0.0.104",
+  "CLIENT_PROGRAM_NAME" : "java@vm-db26 (TNS V1-V3)",
+  "SID" : "300",
+  "LOGON_END_USER" : "ebaker",
+  "SESSION_EDITION_ID" : "140",
+  "NLS_SORT" : "BINARY",
+  "CURRENT_END_USER" : "ebaker",
+  "SERVICE_NAME" : "orclpdb1",
+  "CDB_NAME" : "ORCLCDB",
+  "CON_ID" : "3",
+  "INSTANCE" : "1",
+  "SESSION_USERID" : "2147483638",
+  "SESSION_USER" : "XS$NULL",
+  "CLOUD_MIGRATION_MODE" : "OFF",
+  "CURRENT_EDITION_NAME" : "ORA$BASE",
+  "TERMINAL" : "pts/3",
+  "USERNAME" : "ebaker",
+  "DATABASE_ROLE" : "PRIMARY",
+  "LANGUAGE" : "AMERICAN_AMERICA.AL32UTF8",
+  "SESSION_EDITION_NAME" : "ORA$BASE",
+  "NLS_CALENDAR" : "GREGORIAN",
+  "IDENTIFICATION_TYPE" : "XS",
+  "DB_UNIQUE_NAME" : "ORCLCDB",
+  "CON_NAME" : "ORCLPDB1",
+  "PLATFORM_SLASH" : "/",
+  "IS_APPLY_SERVER" : "FALSE",
+  "SESSIONID" : "80096",
+  "DRAIN_STATUS" : "NONE",
+  "CURRENT_SCHEMAID" : "2147483638",
+  "GLOBAL_CONTEXT_MEMORY" : "0",
+  "RESET_STATE" : "NONE",
+  "CURRENT_EDITION_ID" : "140",
+  "FG_JOB_ID" : "0"
+}
+
+-- 個別のコンテクストを取り出すこともできる
+SQL> select ora_end_user_context.lang;
+
+LANG
+--------------------------------------------------------------------------------
+"US"
+```
+
+## 7. クリーンアップ
+
+最後に作成したエンドユーザー・スキーマ・Data Role・ロールを削除します。
+
+```sql
+DROP END USER "manderson";
+DROP END USER "ebaker";
+DROP USER hr CASCADE;
+DROP DATA ROLE employee_role;
+DROP DATA ROLE manager_role;
+DROP ROLE db_role;
+```
+
+以上で、ローカルエンドユーザーを使用した Deep Data Security のチュートリアルは以上です。
+
+## 参考リンク
+
+- [ORA_END_USER_CONTEXT - SQL言語リファレンス](https://docs.oracle.com/en/database/oracle/oracle-database/26/sqlrf/ora_end_user_context.html)
