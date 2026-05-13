@@ -13,6 +13,25 @@ export default defineConfig({
   integrations: [
     starlight({
       title: 'OraDBSec',
+          head: [
+        {
+          tag: 'script',
+          attrs: {
+            src: 'https://www.googletagmanager.com/gtag/js?id=G-XY4JW48D03',
+            async: true
+          }
+        },
+        {
+          tag: 'script',
+          content: `
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-XY4JW48D03');
+  `
+        },
+      ],
       customCss: [
         './src/styles/custom.css',
       ],
